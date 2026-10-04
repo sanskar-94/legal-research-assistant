@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from config.settings import RERANKED_TOP_K, SEMANTIC_TOP_K
@@ -85,6 +86,8 @@ class RetrievalPipeline:
             logger.warning("Hybrid search returned zero candidates")
             return []
 
+        candidates = _drop_duplicate_texts(candidates)
+
         ranked = self._reranker.rerank(candidates, top_k=rerank_top_k)
 
         # Guarantee every result has the full set of expected keys
@@ -104,3 +107,22 @@ class RetrievalPipeline:
             "Retrieval pipeline complete - %d results returned", len(normalised),
         )
         return normalised
+
+
+def _drop_duplicate_texts(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the first of any candidates whose text is identical.
+
+    Some source datasets contain the same record several times; without
+    this the top results can be copies of one passage.
+    """
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for candidate in candidates:
+        key = re.sub(r"\s+", " ", candidate.get("text", "")).strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(candidate)
+    if len(unique) < len(candidates):
+        logger.info("Dropped %d duplicate passages", len(candidates) - len(unique))
+    return unique

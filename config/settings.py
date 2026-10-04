@@ -30,7 +30,7 @@ CHUNK_MAX_TOKENS = 800
 CHUNK_OVERLAP_TOKENS = 50
 
 # Retrieval
-SEMANTIC_TOP_K = 10
+SEMANTIC_TOP_K = 20
 RERANKED_TOP_K = 4
 RRF_K = 60  # Reciprocal Rank Fusion constant
 

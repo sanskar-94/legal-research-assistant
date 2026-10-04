@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
-import math
 import re
 from collections import defaultdict
 from typing import Any, Sequence
+
+import numpy as np
 
 from config.settings import RRF_K, SEMANTIC_TOP_K
 
@@ -88,15 +89,26 @@ def _extract_keyword_terms(query: str) -> list[str]:
 
 
 def _case_variants(term: str) -> list[str]:
-    """ChromaDB ``$contains`` is case-sensitive, so try the usual spellings."""
-    variants = [term, term[:1].upper() + term[1:].lower(), term.lower(), term.upper()]
+    """ChromaDB ``$contains`` is case-sensitive, so try the usual spellings.
+
+    Acronyms such as "IPC" are kept as typed only.
+    """
+    if term.isupper():
+        return [term]
+    variants = [term, term[:1].upper() + term[1:].lower(), term.lower()]
     return list(dict.fromkeys(variants))
 
 
+def _whole_term_pattern(term: str) -> re.Pattern[str]:
+    """Match *term* as a whole identifier: "Article 21" but not "Article 210"."""
+    return re.compile(r"(?<![A-Za-z0-9])" + re.escape(term) + r"(?![A-Za-z0-9])", re.IGNORECASE)
+
+
 def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
-    return dot / norm if norm else 0.0
+    va = np.asarray(a, dtype=float)
+    vb = np.asarray(b, dtype=float)
+    norm = float(np.linalg.norm(va) * np.linalg.norm(vb))
+    return float(va @ vb) / norm if norm else 0.0
 
 
 def _reciprocal_rank_fusion(
@@ -211,6 +223,7 @@ class HybridSearch:
 
         all_hits: dict[str, dict[str, Any]] = {}
         for term in terms:
+            whole_term = _whole_term_pattern(term)
             for variant in _case_variants(term):
                 try:
                     results = self._vectorstore.get(
@@ -231,10 +244,13 @@ class HybridSearch:
                 for idx, chunk_id in enumerate(results["ids"]):
                     if chunk_id in all_hits:
                         continue
+                    text = documents[idx] if documents is not None and idx < len(documents) else ""
+                    if not whole_term.search(text):
+                        continue
                     embedding = embeddings[idx] if embeddings is not None and idx < len(embeddings) else None
                     all_hits[chunk_id] = {
                         "chunk_id": chunk_id,
-                        "text": documents[idx] if documents is not None and idx < len(documents) else "",
+                        "text": text,
                         "metadata": metadatas[idx] if metadatas is not None and idx < len(metadatas) else {},
                         "semantic_score": (
                             max(0.0, _cosine_similarity(query_embedding, embedding))

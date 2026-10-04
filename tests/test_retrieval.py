@@ -489,3 +489,27 @@ class TestRerankerRrfNormalisation:
         ranked = reranker.rerank([none, top], top_k=2)
         assert ranked[0]["chunk_id"] == "a"
         assert ranked[0]["final_score"] - ranked[1]["final_score"] == pytest.approx(0.25)
+
+
+class TestDuplicateRemoval:
+
+    def test_identical_texts_collapsed(self) -> None:
+        from src.retrieval.retrieval_pipeline import _drop_duplicate_texts
+
+        candidates = [
+            {"chunk_id": "a", "text": "Article 21 protects life."},
+            {"chunk_id": "b", "text": "Article 21  protects\nlife."},
+            {"chunk_id": "c", "text": "Article 22 protects against arrest."},
+        ]
+        assert [c["chunk_id"] for c in _drop_duplicate_texts(candidates)] == ["a", "c"]
+
+
+class TestWholeTermMatch:
+
+    def test_longer_number_not_matched(self) -> None:
+        from src.retrieval.hybrid_search import _whole_term_pattern
+
+        pattern = _whole_term_pattern("Article 21")
+        assert pattern.search("under article 21, every person")
+        assert not pattern.search("Article 210 deals with language")
+        assert not pattern.search("Article 21A on education")
