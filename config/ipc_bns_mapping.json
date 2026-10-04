@@ -4,7 +4,7 @@
     "ipc_act": "Indian Penal Code, 1860 (Act 45 of 1860)",
     "bns_act": "Bharatiya Nyaya Sanhita, 2023 (Act 45 of 2023)",
     "note": "Some IPC sections map to multiple BNS sections and vice versa. The 'bns_sections' field is always an array.",
-    "last_updated": "2026-03-19"
+    "last_updated": "2026-10-04"
   },
   "mappings": [
     {
@@ -70,19 +70,19 @@
     {
       "ipc_section": "166A",
       "ipc_title": "Public servant disobeying direction under law",
-      "bns_sections": ["217"],
+      "bns_sections": ["199"],
       "bns_title": "Public servant disobeying direction under law"
     },
     {
       "ipc_section": "170",
       "ipc_title": "Personating a public servant",
-      "bns_sections": ["221"],
+      "bns_sections": ["204"],
       "bns_title": "Personating a public servant"
     },
     {
       "ipc_section": "186",
       "ipc_title": "Obstructing public servant in discharge of public functions",
-      "bns_sections": ["228"],
+      "bns_sections": ["221"],
       "bns_title": "Obstructing public servant in discharge of public functions"
     },
     {
@@ -172,7 +172,7 @@
     {
       "ipc_section": "320",
       "ipc_title": "Grievous hurt",
-      "bns_sections": ["115"],
+      "bns_sections": ["116"],
       "bns_title": "Grievous hurt"
     },
     {
@@ -220,13 +220,13 @@
     {
       "ipc_section": "363",
       "ipc_title": "Punishment for kidnapping",
-      "bns_sections": ["138"],
+      "bns_sections": ["137(2)"],
       "bns_title": "Kidnapping"
     },
     {
       "ipc_section": "364",
       "ipc_title": "Kidnapping or abducting in order to murder",
-      "bns_sections": ["139"],
+      "bns_sections": ["140(1)"],
       "bns_title": "Kidnapping or abducting in order to murder"
     },
     {
@@ -244,7 +244,7 @@
     {
       "ipc_section": "376",
       "ipc_title": "Punishment for rape",
-      "bns_sections": ["65"],
+      "bns_sections": ["64"],
       "bns_title": "Punishment for rape"
     },
     {
@@ -328,7 +328,7 @@
     {
       "ipc_section": "468",
       "ipc_title": "Forgery for purpose of cheating",
-      "bns_sections": ["338"],
+      "bns_sections": ["336(3)"],
       "bns_title": "Forgery for purpose of cheating"
     },
     {
@@ -340,7 +340,7 @@
     {
       "ipc_section": "489A",
       "ipc_title": "Counterfeiting currency notes or bank notes",
-      "bns_sections": ["179"],
+      "bns_sections": ["178"],
       "bns_title": "Counterfeiting currency notes or bank notes"
     },
     {
