@@ -153,7 +153,7 @@ def render_export_button(
     filename = f"nyaya_research_{timestamp}.md"
 
     st.download_button(
-        label="\U0001f4e5  Export as Markdown",
+        label="Export as Markdown",
         data=md_content,
         file_name=filename,
         mime="text/markdown",

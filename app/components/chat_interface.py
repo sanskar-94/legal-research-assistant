@@ -11,6 +11,8 @@ from typing import Optional
 
 import streamlit as st
 
+from app.components.confidence_bar import render_confidence_bar
+
 
 # ---------------------------------------------------------------------------
 # HTML helpers
@@ -235,8 +237,6 @@ def render_answer(
     formatted = _replace_citation_tags(answer_text)
     st.markdown(formatted, unsafe_allow_html=True)
 
-
-from app.components.confidence_bar import render_confidence_bar
 
 
 def render_chat_history(messages: list[dict]) -> None:

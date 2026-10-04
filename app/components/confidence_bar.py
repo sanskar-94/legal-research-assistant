@@ -10,8 +10,11 @@ from typing import Any, Optional
 
 import streamlit as st
 
-from scripts.evaluate import _detect_hallucinations, _is_substantive_response
-from src.evaluation.citation_metrics import compute_citation_quality
+from src.evaluation.citation_metrics import (
+    compute_citation_quality,
+    detect_hallucinations,
+    is_substantive_response,
+)
 
 
 def _level_label(score: float) -> str:
@@ -28,12 +31,12 @@ def _level_label(score: float) -> str:
 def _level_color(score: float) -> str:
     """Return a hex colour appropriate for the score."""
     if score >= 0.80:
-        return "#16a34a"  # green
+        return "#4ade80"  # green
     if score >= 0.60:
-        return "#d97706"  # amber
+        return "#fbbf24"  # amber
     if score >= 0.40:
-        return "#ea580c"  # orange
-    return "#dc2626"  # red
+        return "#fb923c"  # orange
+    return "#f87171"  # red
 
 
 def render_confidence_bar(
@@ -95,16 +98,16 @@ def render_confidence_bar(
     # Append Evaluation Metrics if text and chunks are provided
     if answer_text is not None and retrieved_chunks is not None:
         citation_quality = compute_citation_quality(answer_text, retrieved_chunks)
-        hallucinations = _detect_hallucinations(answer_text, retrieved_chunks)
-        is_substantive = _is_substantive_response(answer_text)
+        hallucinations = detect_hallucinations(answer_text, retrieved_chunks)
+        is_substantive = is_substantive_response(answer_text, len(retrieved_chunks))
 
         hallucination_text = (
             "None detected" if not hallucinations else f"{len(hallucinations)} found"
         )
-        hallucination_color = "#16a34a" if not hallucinations else "#dc2626"
+        hallucination_color = "#4ade80" if not hallucinations else "#f87171"
 
         substantive_text = "Yes" if is_substantive else "No"
-        substantive_color = "#16a34a" if is_substantive else "#d97706"
+        substantive_color = "#4ade80" if is_substantive else "#fbbf24"
 
         if rows:
             # Separator between confidence breakdown and evaluation metrics

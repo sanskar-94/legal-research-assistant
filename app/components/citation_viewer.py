@@ -5,7 +5,7 @@ expandable excerpts. Designed for the right column of the layout.
 
 When stored metadata fields are empty (common in this dataset),
 falls back to extracting meaningful information from the chunk
-text itself — section references, case names, act names, and
+text itself - section references, case names, act names, and
 Q&A-style headings.
 """
 
@@ -213,7 +213,7 @@ def _build_source_card_html(source: dict, index: int) -> str:
 
     type_label = _esc(_TYPE_LABELS.get(doc_type, doc_type.replace("_", " ").title()))
 
-    # --- Title resolution (stored metadata → text extraction) ---
+    # --- Title resolution (stored metadata -> text extraction) ---
     case_name = metadata.get("case_name", "")
     act_name = metadata.get("act_name", "")
     section_number = metadata.get("section_number", "")

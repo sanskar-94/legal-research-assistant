@@ -15,59 +15,57 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 import logging
+import threading
+import time as _time
 
 import streamlit as st
 
 from app.components.chat_interface import render_answer, render_chat_history
-
-logger = logging.getLogger(__name__)
 from app.components.citation_viewer import render_citation_panel
 from app.components.confidence_bar import render_confidence_bar
 from app.components.export_handler import render_export_button
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Page configuration
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="Nyaya - Legal Research",
-    page_icon="\u2696\ufe0f",
+    page_icon="\u2696",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ---------------------------------------------------------------------------
-# Master CSS - complete dark theme overhaul
+# Page CSS (dark theme)
 # ---------------------------------------------------------------------------
 st.markdown(
     """
 <style>
-/* ═══════════════════════════════════════════════════════════════════
-   IMPORT FONTS
-   ═══════════════════════════════════════════════════════════════════ */
+/* Import fonts */
 @import url('https://fonts.googleapis.com/css2?family=Questrial&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ═══════════════════════════════════════════════════════════════════
-   CSS VARIABLES
-   ═══════════════════════════════════════════════════════════════════ */
+/* CSS variables */
 :root {
-    --bg-base: #f9fafb;
-    --bg-raised: #ffffff;
-    --bg-surface: #ffffff;
-    --bg-overlay: #f3f4f6;
-    --border-subtle: #e5e7eb;
-    --border-default: #d1d5db;
-    --border-hover: #9ca3af;
-    --text-primary: #111827;
-    --text-secondary: #4b5563;
-    --text-tertiary: #6b7280;
-    --accent: #b45309;
-    --accent-hover: #92400e;
-    --accent-dim: rgba(180, 83, 9, 0.10);
-    --accent-glow: rgba(180, 83, 9, 0.06);
-    --success: #16a34a;
-    --warning: #d97706;
-    --error: #dc2626;
-    --info: #2563eb;
+    --bg-base: #0f1115;
+    --bg-raised: #161a21;
+    --bg-surface: #1b2029;
+    --bg-overlay: #222833;
+    --border-subtle: #262c37;
+    --border-default: #323a47;
+    --border-hover: #4a5466;
+    --text-primary: #e6e8ec;
+    --text-secondary: #b3b9c4;
+    --text-tertiary: #8a93a3;
+    --accent: #d4a24c;
+    --accent-hover: #e3b665;
+    --accent-dim: rgba(212, 162, 76, 0.14);
+    --accent-glow: rgba(212, 162, 76, 0.07);
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --error: #f87171;
+    --info: #60a5fa;
     --radius-sm: 8px;
     --radius-md: 12px;
     --radius-lg: 16px;
@@ -76,9 +74,7 @@ st.markdown(
     --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   GLOBAL RESETS
-   ═══════════════════════════════════════════════════════════════════ */
+/* Global resets */
 .stApp {
     background-color: var(--bg-base) !important;
     font-family: var(--font-body) !important;
@@ -97,7 +93,7 @@ st.markdown(
     display: none !important;
 }
 
-/* ── Kill Streamlit tooltip / floating overlays ────────────── */
+/* Kill Streamlit tooltip / floating overlays */
 [data-testid="stTooltipHoverTarget"],
 .stTooltipIcon,
 div[data-floating-ui-portal] {
@@ -150,9 +146,7 @@ section[data-testid="stSidebar"] button,
     background: var(--border-hover);
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   TYPOGRAPHY
-   ═══════════════════════════════════════════════════════════════════ */
+/* Typography */
 h1, h2, h3, h4, h5, h6,
 .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
     font-family: var(--font-body) !important;
@@ -169,9 +163,7 @@ code, .stCode {
     font-family: var(--font-mono) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   SIDEBAR
-   ═══════════════════════════════════════════════════════════════════ */
+/* Sidebar */
 section[data-testid="stSidebar"] {
     background-color: var(--bg-raised) !important;
     border-right: 1px solid var(--border-subtle) !important;
@@ -215,9 +207,7 @@ section[data-testid="stSidebar"] hr {
     margin: 1rem 0 !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   CHAT MESSAGES
-   ═══════════════════════════════════════════════════════════════════ */
+/* Chat messages */
 [data-testid="stChatMessage"] {
     background: transparent !important;
     border: none !important;
@@ -240,9 +230,7 @@ section[data-testid="stSidebar"] hr {
     border: 1px solid var(--border-subtle) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   CHAT INPUT
-   ═══════════════════════════════════════════════════════════════════ */
+/* Chat input */
 [data-testid="stChatInput"] {
     background-color: var(--bg-base) !important;
     border-top: 1px solid var(--border-subtle) !important;
@@ -278,9 +266,7 @@ section[data-testid="stSidebar"] hr {
     background: var(--accent-hover) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   BUTTONS (GENERAL)
-   ═══════════════════════════════════════════════════════════════════ */
+/* Buttons (general) */
 .stButton > button {
     font-family: var(--font-body) !important;
     border-radius: var(--radius-md) !important;
@@ -305,9 +291,7 @@ section[data-testid="stSidebar"] hr {
     background: var(--accent-dim) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   EXPANDERS
-   ═══════════════════════════════════════════════════════════════════ */
+/* Expanders */
 .streamlit-expanderHeader {
     background: var(--bg-surface) !important;
     border: 1px solid var(--border-subtle) !important;
@@ -339,17 +323,13 @@ details[open] summary {
     border-bottom: 1px solid var(--border-subtle) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   PROGRESS BAR
-   ═══════════════════════════════════════════════════════════════════ */
+/* Progress bar */
 .stProgress > div > div {
     background-color: var(--bg-overlay) !important;
     border-radius: 4px !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   METRICS
-   ═══════════════════════════════════════════════════════════════════ */
+/* Metrics */
 [data-testid="stMetric"] {
     background: var(--bg-surface) !important;
     border: 1px solid var(--border-subtle) !important;
@@ -366,9 +346,7 @@ details[open] summary {
     color: var(--text-secondary) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   ALERTS / INFO / WARNING
-   ═══════════════════════════════════════════════════════════════════ */
+/* Alerts / info / warning */
 [data-testid="stAlert"] {
     background-color: var(--bg-surface) !important;
     border: 1px solid var(--border-subtle) !important;
@@ -376,16 +354,12 @@ details[open] summary {
     color: var(--text-secondary) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   SPINNER
-   ═══════════════════════════════════════════════════════════════════ */
+/* Spinner */
 .stSpinner > div {
     border-top-color: var(--accent) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   CUSTOM COMPONENTS
-   ═══════════════════════════════════════════════════════════════════ */
+/* Custom components */
 
 /* Brand */
 .nyaya-brand {
@@ -580,7 +554,7 @@ details[open] summary {
     margin: 0 2px;
     font-weight: 500;
     letter-spacing: 0.02em;
-    border: 1px solid rgba(196, 154, 108, 0.18);
+    border: 1px solid rgba(212, 162, 76, 0.18);
     cursor: default;
     vertical-align: middle;
 }
@@ -760,7 +734,7 @@ details[open] summary {
 .status-dot.active { background: var(--success); }
 .status-dot.inactive { background: var(--text-tertiary); }
 
-/* Sources column — left border + sticky + aligned to top */
+/* Sources column - left border + sticky + aligned to top */
 [data-testid="stColumn"]:last-child {
     border-left: 1px solid var(--border-subtle) !important;
     padding-left: 1rem !important;
@@ -772,7 +746,7 @@ details[open] summary {
     overflow-y: auto !important;
 }
 
-/* Chat input — always pinned at bottom, full width */
+/* Chat input - always pinned at bottom, full width */
 [data-testid="stBottom"] {
     background: var(--bg-base) !important;
     border-top: 1px solid var(--border-subtle) !important;
@@ -866,26 +840,42 @@ EXAMPLE_QUERIES: list[str] = [
 
 RESEARCH_TOPICS: list[dict[str, str]] = [
     {
-        "icon": "\U0001f4dc",
         "label": "Constitutional Law",
         "query": "What are the fundamental rights under the Indian Constitution?",
     },
     {
-        "icon": "\u2696\ufe0f",
         "label": "Criminal Law",
         "query": "What is Section 302 of IPC and its BNS equivalent?",
     },
     {
-        "icon": "\U0001f3db\ufe0f",
         "label": "Landmark Cases",
         "query": "Explain the Kesavananda Bharati case and its significance",
     },
     {
-        "icon": "\U0001f4d6",
         "label": "Legal Doctrine",
         "query": "Explain the doctrine of basic structure",
     },
 ]
+
+
+
+def _render_mapping_note(mappings: list[dict]) -> None:
+    """Show which IPC sections were matched to BNS sections for this query."""
+    lines = []
+    for row in mappings:
+        bns = ", ".join(row.get("bns_sections", [])) or "no equivalent"
+        lines.append(f"IPC {row['ipc_section']} &rarr; BNS {bns} ({row['bns_title']})")
+    st.markdown(
+        '<div style="background:var(--bg-raised);border:1px solid var(--border-subtle);'
+        'border-left:3px solid var(--accent);border-radius:var(--radius-sm);'
+        'padding:10px 14px;margin:8px 0;font-size:0.82rem;color:var(--text-secondary);">'
+        '<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;'
+        'color:var(--text-tertiary);margin-bottom:4px;">IPC to BNS</div>'
+        + "<br>".join(lines)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Pipeline initialisation
@@ -893,21 +883,21 @@ RESEARCH_TOPICS: list[dict[str, str]] = [
 
 
 @st.cache_resource(show_spinner="Initialising research engine...")
-def _load_pipeline_v2():
+def _load_pipeline():
     """Attempt to import and initialise the LegalResearchPipeline."""
     try:
         from src.pipeline import LegalResearchPipeline
 
         return LegalResearchPipeline()
     except ImportError:
-        logger.warning("LegalResearchPipeline not available — running in UI-only mode.")
+        logger.warning("LegalResearchPipeline not available - running in UI-only mode.")
         return None
     except Exception:
         logger.exception("Pipeline initialisation failed.")
         return None
 
 
-pipeline = _load_pipeline_v2()
+pipeline = _load_pipeline()
 
 # ---------------------------------------------------------------------------
 # Session state defaults
@@ -925,14 +915,14 @@ for key, default in {
         st.session_state[key] = default
 
 # ---------------------------------------------------------------------------
-# Sidebar - minimal redesign
+# Sidebar
 # ---------------------------------------------------------------------------
 with st.sidebar:
     # Brand
     st.markdown(
         """
         <div class="nyaya-brand">
-            <div class="nyaya-brand-icon">\u2696\ufe0f</div>
+            <div class="nyaya-brand-icon">\u2696</div>
             <div>
                 <div class="nyaya-brand-text">Nyaya</div>
                 <div class="nyaya-brand-sub">Legal Research Assistant</div>
@@ -945,7 +935,7 @@ with st.sidebar:
     st.markdown('<hr class="sep-line">', unsafe_allow_html=True)
 
     # New research button
-    if st.button("\u2728  New Research", use_container_width=True):
+    if st.button("New research", use_container_width=True):
         st.session_state.messages = []
         st.session_state.current_sources = []
         st.session_state.current_confidence = None
@@ -962,7 +952,7 @@ with st.sidebar:
 
     for topic in RESEARCH_TOPICS:
         if st.button(
-            f"{topic['icon']}  {topic['label']}",
+            topic["label"],
             key=f"topic_{hash(topic['label'])}",
             use_container_width=True,
         ):
@@ -973,7 +963,14 @@ with st.sidebar:
     # Pipeline status
     pipeline_active = pipeline is not None
     dot_class = "active" if pipeline_active else "inactive"
-    status_text = "Engine online" if pipeline_active else "Engine offline"
+    status_text = "Engine offline"
+    if pipeline_active:
+        indexed = pipeline.document_count()
+        status_text = (
+            f"Engine online &middot; {indexed:,} chunks indexed"
+            if indexed is not None
+            else "Engine online"
+        )
     st.markdown(
         f'<div style="display:flex;align-items:center;padding:4px 0;">'
         f'<span class="status-dot {dot_class}"></span>'
@@ -1004,8 +1001,8 @@ with col_chat:
             '<div style="background:var(--bg-raised);border:1px solid var(--border-subtle);'
             "border-radius:var(--radius-md);padding:14px 18px;color:var(--text-tertiary);"
             'font-size:0.85rem;margin-bottom:1rem;">'
-            "The research pipeline is not available. The vector database may not be populated, "
-            "or required dependencies are missing. You can explore the UI."
+            "The research engine is offline. Build the vector store with the scripts "
+            "in scripts/ and set NVIDIA_API_KEY in .env, then restart the app."
             "</div>",
             unsafe_allow_html=True,
         )
@@ -1019,7 +1016,7 @@ with col_chat:
         st.markdown(
             """
             <div class="welcome-hero">
-                <div class="welcome-icon">\u2696\ufe0f</div>
+                <div class="welcome-icon">\u2696</div>
                 <div class="welcome-title">What would you like to research?</div>
                 <div class="welcome-subtitle">
                     Ask about Indian law \u2014 statutes, landmark judgements,
@@ -1069,7 +1066,7 @@ with col_sources:
         )
 
 # ---------------------------------------------------------------------------
-# Chat input — at page root level so Streamlit pins it to viewport bottom
+# Chat input - at page root level so Streamlit pins it to viewport bottom
 # ---------------------------------------------------------------------------
 user_input = st.chat_input("Ask about Indian law...")
 
@@ -1084,9 +1081,6 @@ elif user_input:
 # ---------------------------------------------------------------------------
 # Generation state machine
 # ---------------------------------------------------------------------------
-import threading
-import time as _time
-
 # Step 1: Launch generation when a new query arrives
 if active_query and st.session_state.gen_active is None:
     st.session_state.messages.append({"role": "user", "content": active_query})
@@ -1114,9 +1108,9 @@ if active_query and st.session_state.gen_active is None:
                 st.markdown(active_query)
             with st.chat_message("assistant"):
                 placeholder = (
-                    f"The research pipeline is not yet available. "
-                    f"Once implemented and indexed, this will retrieve relevant "
-                    f"legal sources and generate cited answers."
+                    "The research engine could not start, so this question was not "
+                    "answered. Check that the vector store has been built "
+                    "(see README) and that NVIDIA_API_KEY is set in .env."
                     f"\n\n**Your query:** {active_query}"
                 )
                 st.info(placeholder)
@@ -1152,84 +1146,28 @@ if gen is not None:
                 )
             else:
                 result = gen["result"]
-                answer_text = result.answer_text or "No answer generated."
+                answer_text = result.answer_text or (
+                    f"*{result.error}*" if result.error else "No answer generated."
+                )
                 sources = [
                     s.model_dump() if hasattr(s, "model_dump") else s
                     for s in result.cited_sources
                 ]
                 confidence = result.confidence
-                error = result.error
                 retrieved_chunks = getattr(result, "retrieved_chunks", [])
 
-                # --- Renumbering logic to ensure perfect sequential numbering (S1, S2, ...) ---
-                display_list = retrieved_chunks if retrieved_chunks else sources
-                if display_list:
-                    import re
-
-                    index_map = {}
-                    for new_idx, item in enumerate(display_list, start=1):
-                        # Safely handle if item is a dict or an object
-                        if isinstance(item, dict):
-                            old_idx = item.get("source_index")
-                            if old_idx is not None:
-                                try:
-                                    index_map[int(old_idx)] = new_idx
-                                except (ValueError, TypeError):
-                                    pass
-                            item["source_index"] = new_idx
-                        else:
-                            old_idx = getattr(item, "source_index", None)
-                            if old_idx is not None:
-                                try:
-                                    index_map[int(old_idx)] = new_idx
-                                except (ValueError, TypeError):
-                                    pass
-                            try:
-                                setattr(item, "source_index", new_idx)
-                            except AttributeError:
-                                pass
-
-                    if retrieved_chunks and sources:
-                        for src in sources:
-                            if isinstance(src, dict):
-                                old_idx = src.get("source_index")
-                                try:
-                                    if (
-                                        old_idx is not None
-                                        and int(old_idx) in index_map
-                                    ):
-                                        src["source_index"] = index_map[int(old_idx)]
-                                except (ValueError, TypeError):
-                                    pass
-                            else:
-                                old_idx = getattr(src, "source_index", None)
-                                try:
-                                    if (
-                                        old_idx is not None
-                                        and int(old_idx) in index_map
-                                    ):
-                                        setattr(
-                                            src, "source_index", index_map[int(old_idx)]
-                                        )
-                                except (ValueError, TypeError, AttributeError):
-                                    pass
-
-                    if index_map and answer_text:
-
-                        def replace_tag(match):
-                            old_idx = int(match.group(1))
-                            new_idx = index_map.get(old_idx, old_idx)
-                            return f"[SOURCE_{new_idx}]"
-
-                        answer_text = re.sub(
-                            r"\[SOURCE_(\d+)\]", replace_tag, answer_text
-                        )
-                # -----------------------------------------------------------------------------
+                # Sources are numbered in the order they were sent to the
+                # model, so [SOURCE_N] in the answer is item N of this list.
+                retrieved_chunks = [
+                    {**chunk, "source_index": idx}
+                    for idx, chunk in enumerate(retrieved_chunks, start=1)
+                ]
+                mappings = getattr(result, "ipc_bns_mappings", []) or []
 
                 with st.chat_message("assistant"):
-                    if error and not answer_text.strip():
-                        st.warning(error)
                     render_answer(answer_text, sources)
+                    if mappings:
+                        _render_mapping_note(mappings)
                     if confidence is not None:
                         render_confidence_bar(
                             confidence,
@@ -1268,7 +1206,7 @@ if gen is not None:
                 '<div class="stop-btn-wrap">',
                 unsafe_allow_html=True,
             )
-            if st.button("\u23f9  Stop generating", key="stop_gen"):
+            if st.button("Stop generating", key="stop_gen"):
                 # Cancel: remove the pending user message
                 if (
                     st.session_state.messages
