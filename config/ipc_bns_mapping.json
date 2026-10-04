@@ -1,0 +1,389 @@
+{
+  "metadata": {
+    "description": "Mapping of Indian Penal Code (IPC), 1860 sections to Bharatiya Nyaya Sanhita (BNS), 2023 equivalents.",
+    "ipc_act": "Indian Penal Code, 1860 (Act 45 of 1860)",
+    "bns_act": "Bharatiya Nyaya Sanhita, 2023 (Act 45 of 2023)",
+    "note": "Some IPC sections map to multiple BNS sections and vice versa. The 'bns_sections' field is always an array.",
+    "last_updated": "2026-03-19"
+  },
+  "mappings": [
+    {
+      "ipc_section": "34",
+      "ipc_title": "Acts done by several persons in furtherance of common intention",
+      "bns_sections": ["3(5)"],
+      "bns_title": "Common intention"
+    },
+    {
+      "ipc_section": "107",
+      "ipc_title": "Abetment of a thing",
+      "bns_sections": ["45"],
+      "bns_title": "Abetment of a thing"
+    },
+    {
+      "ipc_section": "108",
+      "ipc_title": "Abettor",
+      "bns_sections": ["46"],
+      "bns_title": "Abettor"
+    },
+    {
+      "ipc_section": "120A",
+      "ipc_title": "Definition of criminal conspiracy",
+      "bns_sections": ["61"],
+      "bns_title": "Criminal conspiracy"
+    },
+    {
+      "ipc_section": "120B",
+      "ipc_title": "Punishment of criminal conspiracy",
+      "bns_sections": ["61(2)"],
+      "bns_title": "Punishment of criminal conspiracy"
+    },
+    {
+      "ipc_section": "124A",
+      "ipc_title": "Sedition",
+      "bns_sections": ["152"],
+      "bns_title": "Acts endangering sovereignty, unity and integrity of India"
+    },
+    {
+      "ipc_section": "141",
+      "ipc_title": "Unlawful assembly",
+      "bns_sections": ["189"],
+      "bns_title": "Unlawful assembly"
+    },
+    {
+      "ipc_section": "147",
+      "ipc_title": "Punishment for rioting",
+      "bns_sections": ["191"],
+      "bns_title": "Rioting"
+    },
+    {
+      "ipc_section": "148",
+      "ipc_title": "Rioting, armed with deadly weapon",
+      "bns_sections": ["192"],
+      "bns_title": "Rioting armed with deadly weapon"
+    },
+    {
+      "ipc_section": "153A",
+      "ipc_title": "Promoting enmity between different groups",
+      "bns_sections": ["196"],
+      "bns_title": "Promoting enmity between different groups"
+    },
+    {
+      "ipc_section": "166A",
+      "ipc_title": "Public servant disobeying direction under law",
+      "bns_sections": ["217"],
+      "bns_title": "Public servant disobeying direction under law"
+    },
+    {
+      "ipc_section": "170",
+      "ipc_title": "Personating a public servant",
+      "bns_sections": ["221"],
+      "bns_title": "Personating a public servant"
+    },
+    {
+      "ipc_section": "186",
+      "ipc_title": "Obstructing public servant in discharge of public functions",
+      "bns_sections": ["228"],
+      "bns_title": "Obstructing public servant in discharge of public functions"
+    },
+    {
+      "ipc_section": "193",
+      "ipc_title": "Punishment for false evidence",
+      "bns_sections": ["229"],
+      "bns_title": "Giving false evidence"
+    },
+    {
+      "ipc_section": "195",
+      "ipc_title": "Giving or fabricating false evidence with intent to procure conviction of capital offence",
+      "bns_sections": ["231"],
+      "bns_title": "Giving or fabricating false evidence with intent to procure conviction"
+    },
+    {
+      "ipc_section": "211",
+      "ipc_title": "False charge of offence made with intent to injure",
+      "bns_sections": ["248"],
+      "bns_title": "False charge of offence made with intent to injure"
+    },
+    {
+      "ipc_section": "292",
+      "ipc_title": "Sale of obscene books",
+      "bns_sections": ["294"],
+      "bns_title": "Obscene acts and songs"
+    },
+    {
+      "ipc_section": "295A",
+      "ipc_title": "Deliberate and malicious acts intended to outrage religious feelings",
+      "bns_sections": ["299"],
+      "bns_title": "Deliberate and malicious acts intended to outrage religious feelings"
+    },
+    {
+      "ipc_section": "299",
+      "ipc_title": "Culpable homicide",
+      "bns_sections": ["100"],
+      "bns_title": "Culpable homicide"
+    },
+    {
+      "ipc_section": "300",
+      "ipc_title": "Murder",
+      "bns_sections": ["101"],
+      "bns_title": "Murder"
+    },
+    {
+      "ipc_section": "302",
+      "ipc_title": "Punishment for murder",
+      "bns_sections": ["103"],
+      "bns_title": "Punishment for murder"
+    },
+    {
+      "ipc_section": "304",
+      "ipc_title": "Punishment for culpable homicide not amounting to murder",
+      "bns_sections": ["105"],
+      "bns_title": "Punishment for culpable homicide not amounting to murder"
+    },
+    {
+      "ipc_section": "304A",
+      "ipc_title": "Causing death by negligence",
+      "bns_sections": ["106"],
+      "bns_title": "Causing death by negligence"
+    },
+    {
+      "ipc_section": "304B",
+      "ipc_title": "Dowry death",
+      "bns_sections": ["80"],
+      "bns_title": "Dowry death"
+    },
+    {
+      "ipc_section": "306",
+      "ipc_title": "Abetment of suicide",
+      "bns_sections": ["108"],
+      "bns_title": "Abetment of suicide"
+    },
+    {
+      "ipc_section": "307",
+      "ipc_title": "Attempt to murder",
+      "bns_sections": ["109"],
+      "bns_title": "Attempt to murder"
+    },
+    {
+      "ipc_section": "319",
+      "ipc_title": "Hurt",
+      "bns_sections": ["114"],
+      "bns_title": "Hurt"
+    },
+    {
+      "ipc_section": "320",
+      "ipc_title": "Grievous hurt",
+      "bns_sections": ["115"],
+      "bns_title": "Grievous hurt"
+    },
+    {
+      "ipc_section": "323",
+      "ipc_title": "Punishment for voluntarily causing hurt",
+      "bns_sections": ["115(2)"],
+      "bns_title": "Voluntarily causing hurt"
+    },
+    {
+      "ipc_section": "324",
+      "ipc_title": "Voluntarily causing hurt by dangerous weapons or means",
+      "bns_sections": ["118"],
+      "bns_title": "Voluntarily causing hurt by dangerous weapons or means"
+    },
+    {
+      "ipc_section": "325",
+      "ipc_title": "Punishment for voluntarily causing grievous hurt",
+      "bns_sections": ["117"],
+      "bns_title": "Voluntarily causing grievous hurt"
+    },
+    {
+      "ipc_section": "326",
+      "ipc_title": "Voluntarily causing grievous hurt by dangerous weapons",
+      "bns_sections": ["118(2)"],
+      "bns_title": "Voluntarily causing grievous hurt by dangerous weapons"
+    },
+    {
+      "ipc_section": "354",
+      "ipc_title": "Assault or criminal force to woman with intent to outrage her modesty",
+      "bns_sections": ["74"],
+      "bns_title": "Assault or criminal force to woman with intent to outrage her modesty"
+    },
+    {
+      "ipc_section": "354A",
+      "ipc_title": "Sexual harassment",
+      "bns_sections": ["75"],
+      "bns_title": "Sexual harassment and punishment for sexual harassment"
+    },
+    {
+      "ipc_section": "354D",
+      "ipc_title": "Stalking",
+      "bns_sections": ["78"],
+      "bns_title": "Stalking"
+    },
+    {
+      "ipc_section": "363",
+      "ipc_title": "Punishment for kidnapping",
+      "bns_sections": ["138"],
+      "bns_title": "Kidnapping"
+    },
+    {
+      "ipc_section": "364",
+      "ipc_title": "Kidnapping or abducting in order to murder",
+      "bns_sections": ["139"],
+      "bns_title": "Kidnapping or abducting in order to murder"
+    },
+    {
+      "ipc_section": "370",
+      "ipc_title": "Trafficking of persons",
+      "bns_sections": ["143"],
+      "bns_title": "Trafficking of person"
+    },
+    {
+      "ipc_section": "375",
+      "ipc_title": "Rape",
+      "bns_sections": ["63"],
+      "bns_title": "Rape"
+    },
+    {
+      "ipc_section": "376",
+      "ipc_title": "Punishment for rape",
+      "bns_sections": ["65"],
+      "bns_title": "Punishment for rape"
+    },
+    {
+      "ipc_section": "376A",
+      "ipc_title": "Rape causing death or persistent vegetative state",
+      "bns_sections": ["66"],
+      "bns_title": "Punishment for causing death or resulting in persistent vegetative state"
+    },
+    {
+      "ipc_section": "376AB",
+      "ipc_title": "Rape on woman under twelve years of age",
+      "bns_sections": ["65(2)"],
+      "bns_title": "Rape on woman under twelve years of age"
+    },
+    {
+      "ipc_section": "376D",
+      "ipc_title": "Gang rape",
+      "bns_sections": ["70"],
+      "bns_title": "Gang rape"
+    },
+    {
+      "ipc_section": "377",
+      "ipc_title": "Unnatural offences",
+      "bns_sections": [],
+      "bns_title": "Omitted — decriminalised by Navtej Singh Johar v Union of India (2018)"
+    },
+    {
+      "ipc_section": "379",
+      "ipc_title": "Punishment for theft",
+      "bns_sections": ["303"],
+      "bns_title": "Theft"
+    },
+    {
+      "ipc_section": "380",
+      "ipc_title": "Theft in dwelling house",
+      "bns_sections": ["305(a)"],
+      "bns_title": "Theft in dwelling house"
+    },
+    {
+      "ipc_section": "384",
+      "ipc_title": "Punishment for extortion",
+      "bns_sections": ["308"],
+      "bns_title": "Extortion"
+    },
+    {
+      "ipc_section": "392",
+      "ipc_title": "Punishment for robbery",
+      "bns_sections": ["309"],
+      "bns_title": "Robbery"
+    },
+    {
+      "ipc_section": "395",
+      "ipc_title": "Punishment for dacoity",
+      "bns_sections": ["310(2)"],
+      "bns_title": "Dacoity"
+    },
+    {
+      "ipc_section": "406",
+      "ipc_title": "Punishment for criminal breach of trust",
+      "bns_sections": ["316"],
+      "bns_title": "Criminal breach of trust"
+    },
+    {
+      "ipc_section": "415",
+      "ipc_title": "Cheating",
+      "bns_sections": ["318"],
+      "bns_title": "Cheating"
+    },
+    {
+      "ipc_section": "420",
+      "ipc_title": "Cheating and dishonestly inducing delivery of property",
+      "bns_sections": ["318(4)"],
+      "bns_title": "Cheating and dishonestly inducing delivery of property"
+    },
+    {
+      "ipc_section": "452",
+      "ipc_title": "House-trespass after preparation for hurt",
+      "bns_sections": ["333"],
+      "bns_title": "House-trespass after preparation for hurt"
+    },
+    {
+      "ipc_section": "468",
+      "ipc_title": "Forgery for purpose of cheating",
+      "bns_sections": ["338"],
+      "bns_title": "Forgery for purpose of cheating"
+    },
+    {
+      "ipc_section": "471",
+      "ipc_title": "Using as genuine a forged document",
+      "bns_sections": ["340"],
+      "bns_title": "Using as genuine a forged document or electronic record"
+    },
+    {
+      "ipc_section": "489A",
+      "ipc_title": "Counterfeiting currency notes or bank notes",
+      "bns_sections": ["179"],
+      "bns_title": "Counterfeiting currency notes or bank notes"
+    },
+    {
+      "ipc_section": "494",
+      "ipc_title": "Marrying again during lifetime of husband or wife (Bigamy)",
+      "bns_sections": ["82"],
+      "bns_title": "Bigamy"
+    },
+    {
+      "ipc_section": "497",
+      "ipc_title": "Adultery",
+      "bns_sections": [],
+      "bns_title": "Omitted — struck down by Joseph Shine v Union of India (2018)"
+    },
+    {
+      "ipc_section": "498A",
+      "ipc_title": "Husband or relative of husband of a woman subjecting her to cruelty",
+      "bns_sections": ["85"],
+      "bns_title": "Cruelty by husband or relatives of husband"
+    },
+    {
+      "ipc_section": "500",
+      "ipc_title": "Punishment for defamation",
+      "bns_sections": ["356"],
+      "bns_title": "Defamation"
+    },
+    {
+      "ipc_section": "506",
+      "ipc_title": "Punishment for criminal intimidation",
+      "bns_sections": ["351"],
+      "bns_title": "Criminal intimidation"
+    },
+    {
+      "ipc_section": "509",
+      "ipc_title": "Word, gesture or act intended to insult the modesty of a woman",
+      "bns_sections": ["79"],
+      "bns_title": "Word, gesture or act intended to insult the modesty of a woman"
+    },
+    {
+      "ipc_section": "511",
+      "ipc_title": "Punishment for attempting to commit offences punishable with imprisonment for life",
+      "bns_sections": ["62"],
+      "bns_title": "Attempt to commit offences"
+    }
+  ]
+}
