@@ -2,7 +2,7 @@
 
 Targets:
   - Constitution of India
-  - Indian Penal Code (IPC) — all 511 sections
+  - Indian Penal Code (IPC) - all 511 sections
   - Bharatiya Nyaya Sanhita (BNS, 2023)
   - Code of Criminal Procedure (CrPC)
 
@@ -47,7 +47,7 @@ from tenacity import (  # noqa: E402
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger("download_statutes")
 
@@ -113,7 +113,7 @@ class StatuteSource:
 
 
 # ---------------------------------------------------------------------------
-# Statute registry — India Code portal IDs + fallback URLs
+# Statute registry - India Code portal IDs + fallback URLs
 # ---------------------------------------------------------------------------
 STATUTES: list[StatuteSource] = [
     StatuteSource(
@@ -266,7 +266,7 @@ def _download_indiacode_act(statute: StatuteSource) -> dict:
     }
 
     if not statute.act_id:
-        logger.info("  No act_id for '%s' — skipping India Code section crawl.", statute.name)
+        logger.info("  No act_id for '%s' - skipping India Code section crawl.", statute.name)
         return result
 
     list_url = INDIACODE_SECTION_LIST.format(act_id=statute.act_id)
@@ -312,7 +312,7 @@ def _download_indiacode_act(statute: StatuteSource) -> dict:
 def _download_generic_page(statute: StatuteSource) -> str:
     """Try each URL in order and return the first successful page text."""
     for url in statute.urls:
-        # Skip PDF URLs — we only handle HTML here
+        # Skip PDF URLs - we only handle HTML here
         if url.lower().endswith(".pdf"):
             logger.info("  Skipping PDF URL (not handled in text scraper): %s", url)
             continue
@@ -323,9 +323,9 @@ def _download_generic_page(statute: StatuteSource) -> str:
             if len(text) > 200:
                 logger.info("  Got %d chars from %s", len(text), url)
                 return text
-            logger.info("  Page too short (%d chars) from %s — trying next URL.", len(text), url)
+            logger.info("  Page too short (%d chars) from %s - trying next URL.", len(text), url)
         except Exception:
-            logger.warning("  Failed to fetch %s — trying next URL.", url)
+            logger.warning("  Failed to fetch %s - trying next URL.", url)
 
     return ""
 
@@ -336,13 +336,13 @@ def _download_generic_page(statute: StatuteSource) -> str:
 def _save_json(data: dict | list, path: Path) -> None:
     with path.open("w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
-    logger.info("  Saved → %s", path)
+    logger.info("  Saved -> %s", path)
 
 
 def _save_text(text: str, path: Path) -> None:
     with path.open("w", encoding="utf-8") as fh:
         fh.write(text)
-    logger.info("  Saved → %s", path)
+    logger.info("  Saved -> %s", path)
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +355,7 @@ def main() -> None:
     success_count = 0
 
     for statute in STATUTES:
-        logger.info("Processing '%s' …", statute.name)
+        logger.info("Processing '%s' ...", statute.name)
 
         # Strategy 1: India Code section-by-section crawl (IPC, CrPC)
         if statute.act_id:
@@ -365,7 +365,7 @@ def main() -> None:
                 success_count += 1
                 continue
             logger.info(
-                "  Section crawl yielded nothing — falling back to generic page download."
+                "  Section crawl yielded nothing - falling back to generic page download."
             )
 
         # Strategy 2: Generic page text extraction

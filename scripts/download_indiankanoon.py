@@ -40,7 +40,7 @@ from tenacity import (  # noqa: E402
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger("download_indiankanoon")
 
@@ -287,7 +287,7 @@ def _download_doc(doc_id: str, name: str, output_dir: Path) -> bool:
 
     # Skip if already downloaded
     if html_path.exists():
-        logger.info("  Already exists — skipping doc %s (%s)", doc_id, name)
+        logger.info("  Already exists - skipping doc %s (%s)", doc_id, name)
         return True
 
     url = f"{DOC_URL_PREFIX}{doc_id}/"
@@ -317,7 +317,7 @@ def _download_doc(doc_id: str, name: str, output_dir: Path) -> bool:
         json.dump(metadata, fh, ensure_ascii=False, indent=2)
 
     logger.info(
-        "  Saved doc %s — %s (%d chars)", doc_id, name[:50], len(judgement_text)
+        "  Saved doc %s - %s (%d chars)", doc_id, name[:50], len(judgement_text)
     )
     return True
 
@@ -371,7 +371,7 @@ def main() -> None:
     ]
 
     logger.info(
-        "Phase 1: Downloading %d known landmark cases …", len(valid_landmarks)
+        "Phase 1: Downloading %d known landmark cases ...", len(valid_landmarks)
     )
 
     for entry in valid_landmarks:
@@ -396,7 +396,7 @@ def main() -> None:
     if downloaded < MAX_JUDGEMENTS:
         remaining = MAX_JUDGEMENTS - downloaded
         logger.info(
-            "Phase 2: Searching for up to %d additional judgements …", remaining
+            "Phase 2: Searching for up to %d additional judgements ...", remaining
         )
         additional = _collect_doc_ids_from_searches(known_ids, MAX_JUDGEMENTS)
 

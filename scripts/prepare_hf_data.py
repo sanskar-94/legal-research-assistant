@@ -27,7 +27,7 @@ from config.settings import PROCESSED_DIR, RAW_DIR, CHUNKS_DIR  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger("prepare_hf_data")
 
@@ -41,7 +41,7 @@ def _save_json(data: list[dict], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
-    logger.info("  Saved %d records → %s", len(data), path.name)
+    logger.info("  Saved %d records -> %s", len(data), path.name)
 
 
 def process_indian_legal(raw_dir: Path, processed_dir: Path) -> list[dict]:
@@ -70,7 +70,7 @@ def process_indian_legal(raw_dir: Path, processed_dir: Path) -> list[dict]:
 def process_sc_judgements_chunked(raw_dir: Path) -> list[dict]:
     """Convert vihaannnn/Indian-Supreme-Court-Judgements-Chunked (pre-chunked).
 
-    These are already chunked — save directly as chunks.
+    These are already chunked - save directly as chunks.
     """
     path = raw_dir / "sc_judgements_chunked_train.json"
     if not path.exists():
@@ -213,7 +213,7 @@ def main() -> None:
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # ── Documents that need chunking (save to data/processed/) ──
+    # Documents that need chunking (save to data/processed/)
     all_docs: list[dict] = []
     all_docs.extend(process_indian_legal(RAW_DIR, PROCESSED_DIR))
     all_docs.extend(process_indian_law_dataset(RAW_DIR, PROCESSED_DIR))
@@ -222,7 +222,7 @@ def main() -> None:
     if all_docs:
         _save_json(all_docs, PROCESSED_DIR / "hf_documents.json")
 
-    # ── Pre-chunked data (save directly to data/processed/chunks/) ──
+    # Pre-chunked data (save directly to data/processed/chunks/)
     all_prechunks: list[dict] = []
     all_prechunks.extend(process_sc_judgements_chunked(RAW_DIR))
     all_prechunks.extend(process_legal_dataset_india(RAW_DIR))
@@ -232,8 +232,8 @@ def main() -> None:
 
     logger.info("=" * 60)
     logger.info("Preparation complete.")
-    logger.info("  Documents for chunking: %d → %s", len(all_docs), PROCESSED_DIR)
-    logger.info("  Pre-chunked entries:    %d → %s", len(all_prechunks), CHUNKS_DIR)
+    logger.info("  Documents for chunking: %d -> %s", len(all_docs), PROCESSED_DIR)
+    logger.info("  Pre-chunked entries:    %d -> %s", len(all_prechunks), CHUNKS_DIR)
     logger.info("=" * 60)
     logger.info("")
     logger.info("Next steps:")

@@ -26,7 +26,7 @@ from src.ingestion.metadata_extractor import extract_metadata
 from src.ingestion.pdf_parser import parse_pdf
 from src.ingestion.text_cleaner import clean_legal_text
 
-# ── Logging ─────────────────────────────────────────────────────────
+# Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -34,7 +34,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Supported Extensions ────────────────────────────────────────────
+# Supported Extensions
 PDF_EXTENSIONS = frozenset({".pdf"})
 TEXT_EXTENSIONS = frozenset({".txt", ".text"})
 HTML_EXTENSIONS = frozenset({".html", ".htm"})
@@ -202,6 +202,44 @@ def process_html(file_path: Path, output_dir: Path) -> bool:
         return False
 
 
+def process_statute_sections(file_path: Path, output_dir: Path) -> bool:
+    """Convert a section-by-section statute crawl into one text document.
+
+    ``download_statutes.py`` saves India Code crawls as JSON with a
+    ``sections`` list. Each section is written as "Section N. Title" followed
+    by its text so the statute chunker can split on those headers again.
+
+    Returns True when a document was written, False when the file had no
+    sections (generic downloads are handled through their .txt copy).
+    """
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.exception("Failed to read statute JSON: %s", file_path)
+        return False
+
+    sections = [s for s in data.get("sections", []) if s.get("text")]
+    if not sections:
+        return False
+
+    body = "\n\n".join(
+        f"Section {s['section_no']}. {s.get('title', '')}\n{s['text']}".strip()
+        for s in sections
+    )
+    output = {
+        "source_file": file_path.name,
+        "source_type": "statute_sections",
+        "act_name": data.get("name"),
+        "metadata": {},
+        "full_text": clean_legal_text(body),
+    }
+    out_path = _output_path_for(file_path, output_dir)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(output, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("Saved %d sections: %s", len(sections), out_path)
+    return True
+
+
 def run_pipeline() -> None:
     """Walk data/raw/ and process all supported files."""
     if not RAW_DIR.exists():
@@ -220,21 +258,18 @@ def run_pipeline() -> None:
         )
     ]
 
-    if not supported_files:
-        logger.info(
-            "No supported files found in %s. "
-            "Add .pdf, .txt, or .html files to process.",
-            RAW_DIR,
-        )
-        return
-
     logger.info(
-        "Found %d files to process in %s",
+        "Found %d PDF/HTML/text files to process in %s",
         len(supported_files), RAW_DIR,
     )
 
     success_count = 0
     failure_count = 0
+
+    # Statutes crawled section by section from India Code
+    for file_path in sorted((RAW_DIR / "statutes").glob("*.json")):
+        if process_statute_sections(file_path, PROCESSED_DIR):
+            success_count += 1
 
     for file_path in supported_files:
         ext = file_path.suffix.lower()

@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Path bootstrap — allow ``python scripts/build_vectorstore.py``
+# Path bootstrap - allow ``python scripts/build_vectorstore.py``
 # ---------------------------------------------------------------------------
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPT_DIR.parent
@@ -32,7 +32,7 @@ from src.embeddings.vectorstore import VectorStore  # noqa: E402
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger("build_vectorstore")
 
@@ -45,7 +45,7 @@ def _load_chunks_from_file(filepath: Path) -> list[Chunk]:
     """Deserialise a JSON file into a list of Chunk models.
 
     Supports both a top-level JSON array and a single JSON object.
-    Returns a *new* list — the file is never modified.
+    Returns a *new* list - the file is never modified.
     """
     try:
         with filepath.open("r", encoding="utf-8") as fh:
@@ -58,7 +58,7 @@ def _load_chunks_from_file(filepath: Path) -> list[Chunk]:
         raw = [raw]
 
     if not isinstance(raw, list):
-        logger.warning("Unexpected JSON structure in '%s' — skipping.", filepath)
+        logger.warning("Unexpected JSON structure in '%s' - skipping.", filepath)
         return []
 
     chunks: list[Chunk] = []
@@ -113,27 +113,31 @@ def main() -> None:
 
     logger.info("Total chunks loaded: %d", len(all_chunks))
 
-    # 3. Extract texts for embedding
-    texts = [chunk.text for chunk in all_chunks]
+    # Duplicate ids (e.g. the same chunk in two files) would make ChromaDB
+    # reject the whole upsert batch, so keep the first occurrence only.
+    unique: dict[str, Chunk] = {}
+    for chunk in all_chunks:
+        unique.setdefault(chunk.chunk_id, chunk)
+    if len(unique) < len(all_chunks):
+        logger.info("Dropped %d duplicate chunk ids.", len(all_chunks) - len(unique))
+    all_chunks = list(unique.values())
 
-    # 4. Embed
+    # 3. Embed and upsert batch by batch so memory stays flat on large corpora
     embedding_service = EmbeddingService()
-    embeddings = embedding_service.embed_batch(texts, batch_size=EMBEDDING_BATCH_SIZE)
-
-    # 5. Upsert into ChromaDB in batches to avoid memory pressure
     vector_store = VectorStore()
-    upsert_batch_size = 500
+    upsert_batch_size = 1000
     total = len(all_chunks)
     for start in range(0, total, upsert_batch_size):
         end = min(start + upsert_batch_size, total)
         batch_chunks = all_chunks[start:end]
-        batch_embeddings = embeddings[start:end]
-        vector_store.add_chunks(batch_chunks, batch_embeddings)
-        logger.info(
-            "  Upserted batch %d-%d of %d", start + 1, end, total
+        batch_embeddings = embedding_service.embed_batch(
+            [chunk.text for chunk in batch_chunks],
+            batch_size=EMBEDDING_BATCH_SIZE,
         )
+        vector_store.add_chunks(batch_chunks, batch_embeddings)
+        logger.info("  Indexed %d / %d chunks", end, total)
 
-    # 6. Report
+    # 4. Report
     elapsed = time.time() - start_time
     stats = vector_store.get_collection_stats()
     logger.info("=== Build Complete ===")

@@ -41,7 +41,7 @@ from tenacity import (  # noqa: E402
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger("download_hf_datasets")
 
@@ -75,7 +75,7 @@ def _ensure_dirs() -> None:
 def _rows_to_serialisable(dataset_split) -> list[dict]:
     """Convert a HuggingFace Dataset split into a plain list of dicts.
 
-    Returns a *new* list — the original dataset is never mutated.
+    Returns a *new* list - the original dataset is never mutated.
     """
     rows: list[dict] = []
     for row in dataset_split:
@@ -105,11 +105,11 @@ def _download_dataset(
     from datasets import load_dataset  # imported here to defer heavy load
 
     logger.info(
-        "Downloading dataset '%s' (config=%s) …",
+        "Downloading dataset '%s' (config=%s) ...",
         dataset_id,
         config_name or "default",
     )
-    kwargs: dict = {"trust_remote_code": True}
+    kwargs: dict = {}
     if config_name is not None:
         kwargs["name"] = config_name
 
@@ -121,7 +121,7 @@ def _save_split(rows: list[dict], output_path: Path) -> None:
     """Write rows to a JSON file."""
     with output_path.open("w", encoding="utf-8") as fh:
         json.dump(rows, fh, ensure_ascii=False, indent=2)
-    logger.info("  Saved %d records → %s", len(rows), output_path)
+    logger.info("  Saved %d records -> %s", len(rows), output_path)
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +138,7 @@ def main() -> None:
             dataset_dict = _download_dataset(dataset_id, config_name)
         except Exception:
             logger.exception(
-                "Failed to download '%s' after retries — skipping.", dataset_id
+                "Failed to download '%s' after retries - skipping.", dataset_id
             )
             failure_count += 1
             continue
