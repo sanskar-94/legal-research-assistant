@@ -32,7 +32,7 @@ class StatuteSection(BaseModel):
     model_config = {"frozen": True}
 
 
-# ── Section Marker Patterns ─────────────────────────────────────────
+# Section Marker Patterns
 
 # Pattern for "Section <number>" style (IPC, BNS, CrPC, etc.)
 _SECTION_MARKER: Final[re.Pattern[str]] = re.compile(

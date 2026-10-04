@@ -7,21 +7,24 @@ a structured ``CitedResponse`` with citation metadata.
 
 from __future__ import annotations
 
+import html
 import logging
 import re
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from src.generation.prompt_builder import flatten_chunk
+
 logger = logging.getLogger(__name__)
 
-# ── Regex for [SOURCE_N] markers ──────────────────────────────────
+# Regex for [SOURCE_N] markers
 _SOURCE_REF_PATTERN: re.Pattern[str] = re.compile(
     r"\[SOURCE_(\d+)\]"
 )
 
 
-# ── Pydantic v2 models ───────────────────────────────────────────
+# Pydantic v2 models
 
 class CitedSource(BaseModel):
     """A single source that was cited in the LLM response."""
@@ -49,12 +52,12 @@ class CitedResponse(BaseModel):
     )
 
 
-# ── Parser ────────────────────────────────────────────────────────
+# Parser
 
 class ResponseParser:
     """Extracts, validates, and structures citation data from LLM output.
 
-    All methods are pure — no internal state is mutated.
+    The parser holds no state.
     """
 
     def parse_response(
@@ -117,7 +120,7 @@ class ResponseParser:
         cited_index_set: set[int] = set()
 
         for idx in valid_indices:
-            chunk = source_chunks[idx - 1]  # 1-based → 0-based
+            chunk = source_chunks[idx - 1]  # 1-based -> 0-based
             cited_index_set.add(idx)
 
             # Extract the document metadata dict (flat, not nested)
@@ -171,7 +174,7 @@ class ResponseParser:
             citation_validity=round(citation_validity, 4),
         )
 
-    # ── Internal helpers ──────────────────────────────────────────
+    # Internal helpers
 
     @staticmethod
     def _build_html(
@@ -188,7 +191,7 @@ class ResponseParser:
             idx = int(match.group(1))
             if 1 <= idx <= len(source_chunks):
                 chunk = source_chunks[idx - 1]
-                tooltip = _tooltip_for(chunk)
+                tooltip = html.escape(_tooltip_for(chunk), quote=True)
                 return (
                     f'<span class="citation-badge" '
                     f'data-source-index="{idx}" '
@@ -196,7 +199,7 @@ class ResponseParser:
                     f"[SOURCE_{idx}]"
                     f"</span>"
                 )
-            # Invalid reference — leave unchanged
+            # Invalid reference - leave unchanged
             return match.group(0)
 
         return _SOURCE_REF_PATTERN.sub(_replacer, response_text)
@@ -204,6 +207,7 @@ class ResponseParser:
 
 def _tooltip_for(chunk: dict) -> str:
     """Generate a human-readable tooltip for a citation badge."""
+    chunk = flatten_chunk(chunk)
     doc_type = chunk.get("doc_type", "unknown")
 
     if doc_type == "judgement":
@@ -226,5 +230,8 @@ def _tooltip_for(chunk: dict) -> str:
     if doc_type == "constitution":
         section = chunk.get("section_number", "")
         return f"Article {section}" if section else "Constitution"
+
+    if doc_type == "mapping":
+        return "IPC / BNS correspondence table"
 
     return doc_type

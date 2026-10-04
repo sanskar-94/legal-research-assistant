@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# ── Pydantic Models ─────────────────────────────────────────────────
+# Pydantic Models
 
 
 class DocumentMetadata(BaseModel):
@@ -53,7 +53,7 @@ class DocumentMetadata(BaseModel):
     model_config = {"frozen": True}
 
 
-# ── Case Name Patterns ──────────────────────────────────────────────
+# Case Name Patterns
 # Matches patterns like "X v. Y", "X vs. Y", "X versus Y"
 _CASE_NAME_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"(?P<case_name>"
@@ -65,7 +65,7 @@ _CASE_NAME_PATTERN: Final[re.Pattern[str]] = re.compile(
     re.MULTILINE,
 )
 
-# ── Citation Patterns ───────────────────────────────────────────────
+# Citation Patterns
 _AIR_CITATION_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"AIR\s+(\d{4})\s+(SC|Bom|Del|Mad|Cal|All|Ker|Kar|Pat|AP|Guj|HP|"
     r"J&K|MP|Ori|P&H|Raj|NOC)\s+(\d+)",
@@ -82,7 +82,7 @@ _SCR_CITATION_PATTERN: Final[re.Pattern[str]] = re.compile(
     re.IGNORECASE,
 )
 
-# ── Date Patterns ───────────────────────────────────────────────────
+# Date Patterns
 _MONTH_NAMES: Final[str] = (
     "January|February|March|April|May|June|July|August|"
     "September|October|November|December"
@@ -110,7 +110,7 @@ _MONTH_MAP: Final[dict[str, int]] = {
     "september": 9, "october": 10, "november": 11, "december": 12,
 }
 
-# ── Court Patterns ──────────────────────────────────────────────────
+# Court Patterns
 _COURT_PATTERNS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     (re.compile(r"Supreme\s+Court\s+of\s+India", re.IGNORECASE), "Supreme Court of India"),
     (re.compile(r"(?:Hon'?ble\s+)?Supreme\s+Court", re.IGNORECASE), "Supreme Court of India"),
@@ -123,7 +123,7 @@ _COURT_PATTERNS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     (re.compile(r"National\s+Green\s+Tribunal|NGT", re.IGNORECASE), "NGT"),
 )
 
-# ── Bench / Judge Patterns ──────────────────────────────────────────
+# Bench / Judge Patterns
 _BENCH_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"(?:(?:Hon'?ble|HON'?BLE)\s+)?"
     r"(?:(?:Mr|Mrs|Ms|Smt|Dr|Justice|JUSTICE|Chief\s+Justice|CJI)\.?\s+)+"
@@ -136,7 +136,7 @@ _CORAM_SECTION: Final[re.Pattern[str]] = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
-# ── Statute Patterns ───────────────────────────────────────────────
+# Statute Patterns
 _STATUTE_SECTION_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"(?:Section|Sec\.|S\.)\s*(\d+[A-Za-z]?(?:\(\d+\))?)"
     r"(?:\s+(?:of|,)\s+(?:the\s+)?)"

@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-# ── Path bootstrap ──────────────────────────────────────────────────
+# Path bootstrap
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -32,7 +32,7 @@ from src.chunking.legal_chunker import (
 from tests.conftest import make_chunk_metadata
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
+# Helpers
 
 def _all_chunk_texts(chunks: list[Chunk]) -> list[str]:
     """Extract just the text from a list of chunks."""
@@ -43,7 +43,7 @@ def _total_chunks(chunks: list[Chunk]) -> int:
     return len(chunks)
 
 
-# ── Tests: internal helpers ─────────────────────────────────────────
+# Tests: internal helpers
 
 class TestEstimateTokens:
 
@@ -118,7 +118,7 @@ class TestSplitLongText:
             assert _estimate_tokens(piece) < 200
 
 
-# ── Tests: judgement chunking ───────────────────────────────────────
+# Tests: judgement chunking
 
 class TestChunkJudgement:
 
@@ -183,7 +183,7 @@ class TestChunkJudgement:
             assert not chunk.text.startswith("\n\n")
 
 
-# ── Tests: statute chunking ─────────────────────────────────────────
+# Tests: statute chunking
 
 class TestChunkStatute:
 
@@ -238,7 +238,7 @@ class TestChunkStatute:
         assert len(chunks) == 1
 
 
-# ── Tests: constitution chunking ────────────────────────────────────
+# Tests: constitution chunking
 
 class TestChunkConstitution:
 
@@ -287,7 +287,7 @@ class TestChunkConstitution:
         assert len(chunks) >= 2
 
 
-# ── Tests: chunk_document router ────────────────────────────────────
+# Tests: chunk_document router
 
 class TestChunkDocumentRouter:
 
@@ -329,7 +329,7 @@ class TestChunkDocumentRouter:
             assert chunk.metadata.doc_type == doc_type
 
 
-# ── Tests: edge cases ───────────────────────────────────────────────
+# Tests: edge cases
 
 class TestEdgeCases:
 
@@ -382,3 +382,19 @@ class TestEdgeCases:
         meta = make_chunk_metadata(doc_type="judgement")
         chunks = chunk_judgement(marker, meta)
         assert len(chunks) >= 1
+
+
+class TestChunkIds:
+
+    def test_ids_are_stable_across_runs(self, judgement_text: str, judgement_metadata: dict[str, Any]) -> None:
+        first = [c.chunk_id for c in chunk_judgement(judgement_text, judgement_metadata)]
+        second = [c.chunk_id for c in chunk_judgement(judgement_text, judgement_metadata)]
+        assert first == second
+
+    def test_id_built_from_doc_id_and_index(self) -> None:
+        chunk = Chunk(text="x", metadata=ChunkMetadata(doc_id="ipc_1860", doc_type="statute", chunk_index=4))
+        assert chunk.chunk_id == "ipc_1860::4"
+
+    def test_explicit_id_kept(self) -> None:
+        chunk = Chunk(chunk_id="sc_chunk_9", text="x", metadata={"doc_id": "d", "doc_type": "judgement"})
+        assert chunk.chunk_id == "sc_chunk_9"

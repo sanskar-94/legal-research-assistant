@@ -16,7 +16,7 @@ from config.settings import CONFIDENCE_WEIGHTS
 
 logger = logging.getLogger(__name__)
 
-# ── Confidence-level thresholds ──────────────────────────────────────
+# Confidence-level thresholds
 _CONFIDENCE_LEVELS: tuple[tuple[float, str, str], ...] = (
     (0.80, "High", "green"),
     (0.60, "Medium", "yellow"),
@@ -24,7 +24,7 @@ _CONFIDENCE_LEVELS: tuple[tuple[float, str, str], ...] = (
 )
 _DEFAULT_LEVEL: tuple[str, str] = ("Very Low", "red")
 
-# ── Retrieval-quality mapping constants ──────────────────────────────
+# Retrieval-quality mapping constants
 _SIMILARITY_FLOOR = 0.3
 _SIMILARITY_CEILING = 0.9
 
@@ -56,17 +56,17 @@ class ConfidenceScorer:
 
     Signals
     -------
-    1. **retrieval_quality** (weight 0.40) — average cosine similarity of
+    1. **retrieval_quality** (weight 0.40) - average cosine similarity of
        the top retrieved chunks, linearly mapped from [0.3, 0.9] to [0, 1].
-    2. **source_agreement** (weight 0.25) — how many unique sources the
-       answer cites.  1 → 0.3, 2 → 0.6, 3+ → 1.0.
-    3. **authority_strength** (weight 0.20) — mean ``authority_score`` of
+    2. **source_agreement** (weight 0.25) - how many unique sources the
+       answer cites.  1 -> 0.3, 2 -> 0.6, 3+ -> 1.0.
+    3. **authority_strength** (weight 0.20) - mean ``authority_score`` of
        cited chunks (already in [0, 1]).
-    4. **coverage_score** (weight 0.15) — proportion of provided chunks
+    4. **coverage_score** (weight 0.15) - proportion of provided chunks
        actually cited in the response.
     """
 
-    # ── Public API ────────────────────────────────────────────────────
+    # Public API
 
     def score(
         self,
@@ -118,7 +118,7 @@ class ConfidenceScorer:
         level, color = self.get_confidence_level(overall)
 
         logger.info(
-            "Confidence scored: %.2f (%s) — breakdown=%s",
+            "Confidence scored: %.2f (%s) - breakdown=%s",
             overall,
             level,
             breakdown,
@@ -148,7 +148,7 @@ class ConfidenceScorer:
                 return level, color
         return _DEFAULT_LEVEL
 
-    # ── Private signal computations ───────────────────────────────────
+    # Private signal computations
 
     @staticmethod
     def _compute_retrieval_quality(chunks: list[dict[str, Any]]) -> float:
@@ -171,7 +171,7 @@ class ConfidenceScorer:
         ]
         avg_score = sum(scores) / len(scores)
 
-        # Linear mapping from [FLOOR, CEILING] → [0, 1]
+        # Linear mapping from [FLOOR, CEILING] -> [0, 1]
         span = _SIMILARITY_CEILING - _SIMILARITY_FLOOR
         if span <= 0:
             return 0.0
@@ -183,7 +183,7 @@ class ConfidenceScorer:
     def _compute_source_agreement(cited_response: Any) -> float:
         """Score based on the number of unique sources cited.
 
-        1 source → 0.3, 2 sources → 0.6, 3+ sources → 1.0, 0 → 0.0.
+        1 source -> 0.3, 2 sources -> 0.6, 3+ sources -> 1.0, 0 -> 0.0.
         """
         cited_sources = _extract_cited_sources(cited_response)
         unique_doc_ids: set[str] = set()
@@ -266,7 +266,7 @@ class ConfidenceScorer:
         return cited_count / len(chunks)
 
 
-# ── Helpers ──────────────────────────────────────────────────────────
+# Helpers
 
 def _chunk_matches_ids(chunk: dict, ids: set[str]) -> bool:
     """Return True if any identifier of *chunk* appears in *ids*."""

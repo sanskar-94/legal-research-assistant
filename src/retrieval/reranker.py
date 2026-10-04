@@ -12,9 +12,14 @@ from config.settings import (
     RECENCY_BRACKETS,
     RECENCY_DEFAULT,
     RERANKED_TOP_K,
+    RRF_K,
     RRF_WEIGHT,
     SEMANTIC_WEIGHT,
 )
+
+# Largest RRF score a chunk can get from one list (rank 1). Used to put
+# the RRF score on the same 0-1 scale as the other two signals.
+_MAX_SINGLE_LIST_RRF = 1.0 / (RRF_K + 1)
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +88,7 @@ class AuthorityReranker:
     RRF score, and a domain-specific authority score that accounts for
     court hierarchy and decision recency."""
 
-    # ── Authority scoring ─────────────────────────────────────────────
+    # Authority scoring
 
     @staticmethod
     def compute_authority_score(metadata: dict[str, Any]) -> float:
@@ -123,7 +128,7 @@ class AuthorityReranker:
         authority = court_w * 0.4 + recency_w * 0.3 + citation_w * 0.3
         return round(min(max(authority, 0.0), 1.0), 4)
 
-    # ── Re-ranking ────────────────────────────────────────────────────
+    # Re-ranking
 
     def rerank(
         self,
@@ -138,8 +143,11 @@ class AuthorityReranker:
         Final score formula::
 
             final = semantic_score * SEMANTIC_WEIGHT
-                  + rrf_score      * RRF_WEIGHT
+                  + rrf_norm       * RRF_WEIGHT
                   + authority      * AUTHORITY_WEIGHT
+
+        ``rrf_norm`` is the fused RRF score divided by the rank-1 score of a
+        single list, clipped to 1, so a top keyword or semantic hit scores 1.0.
         """
         if not results:
             logger.warning("Reranker received empty results list")
@@ -152,10 +160,11 @@ class AuthorityReranker:
 
             semantic_score = float(result.get("semantic_score", 0.0))
             rrf_score = float(result.get("rrf_score", 0.0))
+            rrf_norm = min(rrf_score / _MAX_SINGLE_LIST_RRF, 1.0)
 
             final_score = (
                 semantic_score * SEMANTIC_WEIGHT
-                + rrf_score * RRF_WEIGHT
+                + rrf_norm * RRF_WEIGHT
                 + authority * AUTHORITY_WEIGHT
             )
 

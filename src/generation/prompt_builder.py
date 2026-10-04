@@ -1,4 +1,4 @@
-"""Citation-grounded prompt construction for Gemini.
+"""Citation-grounded prompt construction.
 
 Converts a user query and a list of retrieved chunks into a
 (system_prompt, user_prompt) pair ready for the LLM, with every
@@ -19,9 +19,24 @@ from config.prompts import (
 
 logger = logging.getLogger(__name__)
 
-# ── Metadata formatters keyed by doc_type ─────────────────────────
 
-_METADATA_BUILDERS: dict[str, object] = {}  # populated below
+def flatten_chunk(chunk: dict) -> dict:
+    """Return a copy of *chunk* with its nested ``metadata`` lifted to the top level.
+
+    Retrieval results keep document fields (``case_name``, ``court``,
+    ``act_name``...) under ``chunk["metadata"]``, while the formatters below
+    read them from the top level. Top-level keys win on conflict, so
+    scores set by the retriever are not overwritten.
+    """
+    metadata = chunk.get("metadata")
+    if not isinstance(metadata, dict):
+        return dict(chunk)
+    flat = {**metadata, **{k: v for k, v in chunk.items() if k != "metadata"}}
+    flat["metadata"] = metadata
+    return flat
+
+
+# Metadata formatters keyed by doc_type
 
 
 def _judgement_metadata(chunk: dict) -> str:
@@ -55,6 +70,11 @@ def _constitution_metadata(chunk: dict) -> str:
     return "Constitution (article number unavailable)"
 
 
+def _mapping_metadata(chunk: dict) -> str:
+    """Build the metadata line for the IPC/BNS correspondence table."""
+    return f"Correspondence table: {chunk.get('act_name', 'IPC / BNS')}"
+
+
 def _default_metadata(chunk: dict) -> str:
     """Fallback metadata line for unknown doc_types."""
     return f"Document type: {chunk.get('doc_type', 'unknown')}"
@@ -63,8 +83,7 @@ def _default_metadata(chunk: dict) -> str:
 class PromptBuilder:
     """Builds citation-grounded prompts from retrieved chunks.
 
-    All methods are pure functions that return new values — no
-    internal state is mutated.
+    The builder holds no state; the same inputs always give the same prompt.
     """
 
     def build_prompt(
@@ -82,14 +101,13 @@ class PromptBuilder:
                               metadata fields.
 
         Returns:
-            A ``(system_prompt, user_prompt)`` tuple ready for the
-            Gemini client.
+            A ``(system_prompt, user_prompt)`` tuple ready for the LLM client.
         """
         if not query:
             raise ValueError("Query must not be empty.")
 
         if not retrieved_chunks:
-            logger.warning("No chunks provided — LLM will have no sources.")
+            logger.warning("No chunks provided - LLM will have no sources.")
 
         formatted_sources = "\n".join(
             self._format_source(index=i + 1, chunk=chunk)
@@ -102,14 +120,14 @@ class PromptBuilder:
         )
 
         logger.debug(
-            "Prompt built — %d sources, user prompt length %d",
+            "Prompt built - %d sources, user prompt length %d",
             len(retrieved_chunks),
             len(user_prompt),
         )
 
         return SYSTEM_PROMPT, user_prompt
 
-    # ── Internal helpers ──────────────────────────────────────────
+    # Internal helpers
 
     def _format_source(self, index: int, chunk: dict) -> str:
         """Format a single chunk as a numbered SOURCE block.
@@ -124,9 +142,10 @@ class PromptBuilder:
         Returns:
             A string matching ``SOURCE_FORMAT_TEMPLATE``.
         """
-        doc_type = chunk.get("doc_type", "unknown")
-        metadata_line = self._build_metadata_line(doc_type, chunk)
-        text = chunk.get("text", "")
+        flat = flatten_chunk(chunk)
+        doc_type = flat.get("doc_type") or "unknown"
+        metadata_line = self._build_metadata_line(doc_type, flat)
+        text = flat.get("text", "")
 
         return SOURCE_FORMAT_TEMPLATE.format(
             index=index,
@@ -142,6 +161,7 @@ class PromptBuilder:
             "judgement": _judgement_metadata,
             "statute": _statute_metadata,
             "constitution": _constitution_metadata,
+            "mapping": _mapping_metadata,
         }
         formatter = formatters.get(doc_type, _default_metadata)
         return formatter(chunk)

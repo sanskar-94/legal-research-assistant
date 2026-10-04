@@ -13,18 +13,18 @@ from typing import Final
 
 logger = logging.getLogger(__name__)
 
-# ── OCR Artifact Corrections ────────────────────────────────────────
+# OCR Artifact Corrections
 # Ordered pairs: (pattern, replacement)
 # Applied in sequence; order matters for correctness.
 _OCR_CORRECTIONS: Final[tuple[tuple[str, str], ...]] = (
     # Common ligature / glyph misreads
     (r"\brn\b", "m"),               # "rn" misread as separate chars instead of "m"
-    (r"(?<=[A-Z])0(?=[A-Z])", "O"), # digit zero between uppercase letters → letter O
-    (r"(?<=[a-z])0(?=[a-z])", "o"), # digit zero between lowercase letters → letter o
-    (r"(?<=\s)l(?=\d)", "1"),       # lowercase L before digit → digit 1
-    (r"(?<=\d)l(?=\d)", "1"),       # lowercase L between digits → digit 1
-    (r"(?<=\d)l(?=\s)", "1"),       # lowercase L after digit before space → digit 1
-    (r"\bII\b(?=\s+\d)", "11"),     # "II" before numbers → "11" (common in section refs)
+    (r"(?<=[A-Z])0(?=[A-Z])", "O"), # digit zero between uppercase letters -> letter O
+    (r"(?<=[a-z])0(?=[a-z])", "o"), # digit zero between lowercase letters -> letter o
+    (r"(?<=\s)l(?=\d)", "1"),       # lowercase L before digit -> digit 1
+    (r"(?<=\d)l(?=\d)", "1"),       # lowercase L between digits -> digit 1
+    (r"(?<=\d)l(?=\s)", "1"),       # lowercase L after digit before space -> digit 1
+    (r"\bII\b(?=\s+\d)", "11"),     # "II" before numbers -> "11" (common in section refs)
     (r"(?<=\w)ff(?=\s)", "ff"),     # keep "ff" at word end (not a misread)
     (r"\btbe\b", "the"),            # common OCR misread
     (r"\bwitb\b", "with"),          # common OCR misread
@@ -36,7 +36,7 @@ _OCR_CORRECTIONS: Final[tuple[tuple[str, str], ...]] = (
     (r"\bcomrnission\b", "commission"),
 )
 
-# ── Section Reference Patterns ──────────────────────────────────────
+# Section Reference Patterns
 # All common abbreviations for "Section"
 _SECTION_ABBREVS: Final[re.Pattern[str]] = re.compile(
     r"\b(?:Sec\.|sec\.|S\.|s\.)\s*(\d+)",
@@ -49,7 +49,7 @@ _ARTICLE_ABBREVS: Final[re.Pattern[str]] = re.compile(
     re.IGNORECASE,
 )
 
-# ── Citation Format Patterns ────────────────────────────────────────
+# Citation Format Patterns
 # AIR citation: normalize spacing and format
 _AIR_CITATION: Final[re.Pattern[str]] = re.compile(
     r"A\.?\s*I\.?\s*R\.?\s*(\d{4})\s+(SC|S\.?\s*C\.?|"
@@ -63,7 +63,7 @@ _SCC_CITATION: Final[re.Pattern[str]] = re.compile(
     re.IGNORECASE,
 )
 
-# ── Header / Footer Patterns ───────────────────────────────────────
+# Header / Footer Patterns
 _PAGE_HEADER_FOOTER: Final[re.Pattern[str]] = re.compile(
     r"(?m)"
     r"(?:"
@@ -77,7 +77,7 @@ _PAGE_HEADER_FOOTER: Final[re.Pattern[str]] = re.compile(
     re.IGNORECASE,
 )
 
-# ── Whitespace Patterns ────────────────────────────────────────────
+# Whitespace Patterns
 _MULTIPLE_BLANK_LINES: Final[re.Pattern[str]] = re.compile(r"\n{3,}")
 _MULTIPLE_SPACES: Final[re.Pattern[str]] = re.compile(r"[ \t]{2,}")
 _TRAILING_SPACES: Final[re.Pattern[str]] = re.compile(r"[ \t]+$", re.MULTILINE)

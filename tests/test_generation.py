@@ -1,62 +1,22 @@
-"""Tests for src/generation/ — prompt building, response parsing,
+"""Tests for src/generation/ - prompt building, response parsing,
 citation validation, and CitedResponse model construction.
 
-All Gemini API calls are mocked.
+All LLM API calls are mocked.
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# ── Path bootstrap ──────────────────────────────────────────────────
+# Path bootstrap
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-# ── Mock heavy third-party deps before importing src.generation ─────
-# google.generativeai is imported at module level by gemini_client.py
-# (which is re-exported from src.generation.__init__).  We install a
-# lightweight stub so the tests can run without the real SDK.
-if "google" not in sys.modules:
-    _google = ModuleType("google")
-    _google_genai = ModuleType("google.generativeai")
-    _google_genai_types = ModuleType("google.generativeai.types")
-    _google_genai.types = _google_genai_types  # type: ignore[attr-defined]
-    _google_genai.configure = lambda **kw: None  # type: ignore[attr-defined]
-    _google_genai.GenerativeModel = MagicMock  # type: ignore[attr-defined]
-    _google_genai_types.GenerationConfig = MagicMock  # type: ignore[attr-defined]
-    sys.modules["google"] = _google
-    sys.modules["google.generativeai"] = _google_genai
-    sys.modules["google.generativeai.types"] = _google_genai_types
-
-# Stub the new google.genai SDK so GeminiClient.__init__ can use it
-if "google.genai" not in sys.modules:
-    _google_mod = sys.modules["google"]
-    _google_genai_new = ModuleType("google.genai")
-    _google_genai_new_types = ModuleType("google.genai.types")
-    _google_genai_new.Client = MagicMock  # type: ignore[attr-defined]
-    _google_genai_new.types = _google_genai_new_types  # type: ignore[attr-defined]
-    _google_genai_new_types.GenerateContentConfig = MagicMock  # type: ignore[attr-defined]
-    _google_mod.genai = _google_genai_new  # type: ignore[attr-defined]
-    sys.modules["google.genai"] = _google_genai_new
-    sys.modules["google.genai.types"] = _google_genai_new_types
-
-if "dotenv" not in sys.modules:
-    _dotenv = ModuleType("dotenv")
-    _dotenv.load_dotenv = lambda *a, **kw: None  # type: ignore[attr-defined]
-    sys.modules["dotenv"] = _dotenv
-
-# Stub openai SDK so GeminiClient can construct without real SDK
-if "openai" not in sys.modules:
-    _openai = ModuleType("openai")
-    _openai.OpenAI = MagicMock  # type: ignore[attr-defined]
-    sys.modules["openai"] = _openai
 
 from config.prompts import SOURCE_FORMAT_TEMPLATE, SYSTEM_PROMPT
 from src.generation.prompt_builder import PromptBuilder
@@ -68,7 +28,7 @@ from src.generation.response_parser import (
 )
 
 
-# ── Fixtures ────────────────────────────────────────────────────────
+# Fixtures
 
 @pytest.fixture()
 def prompt_builder() -> PromptBuilder:
@@ -114,7 +74,7 @@ def constitution_chunk() -> dict[str, Any]:
     }
 
 
-# ── Tests: prompt building ──────────────────────────────────────────
+# Tests: prompt building
 
 class TestPromptBuilder:
 
@@ -230,7 +190,7 @@ class TestPromptBuilder:
         assert f"Type: {expected_label}" in user_prompt
 
 
-# ── Tests: response parsing — extracting [SOURCE_N] references ──────
+# Tests: response parsing - extracting [SOURCE_N] references
 
 class TestResponseParsing:
 
@@ -272,7 +232,7 @@ class TestResponseParsing:
         assert result.answer_text == text
 
 
-# ── Tests: citation validation ──────────────────────────────────────
+# Tests: citation validation
 
 class TestCitationValidation:
 
@@ -315,7 +275,7 @@ class TestCitationValidation:
         assert result.citation_validity == 0.0
 
 
-# ── Tests: CitedResponse model ──────────────────────────────────────
+# Tests: CitedResponse model
 
 class TestCitedResponseModel:
 
@@ -357,7 +317,7 @@ class TestCitedResponseModel:
         assert len(result.uncited_sources) == 2
 
 
-# ── Tests: HTML generation ──────────────────────────────────────────
+# Tests: HTML generation
 
 class TestHTMLGeneration:
 
@@ -380,7 +340,7 @@ class TestHTMLGeneration:
         assert "citation-badge" not in result.answer_html
 
 
-# ── Tests: tooltip generation ───────────────────────────────────────
+# Tests: tooltip generation
 
 class TestTooltips:
 
@@ -416,9 +376,9 @@ class TestTooltips:
         assert tip == "regulation"
 
 
-# ── Tests: mock Gemini API ──────────────────────────────────────────
+# Tests: mock LLM API
 
-class TestGeminiClientMocked:
+class TestLLMClientMocked:
 
     def _mock_completion(self, client: Any, response_text: str) -> None:
         """Set up mock for OpenAI-compatible chat completions."""
@@ -431,27 +391,27 @@ class TestGeminiClientMocked:
         client._client.chat.completions.create.return_value = mock_completion
 
     def test_generate_returns_text(self) -> None:
-        from src.generation.gemini_client import GeminiClient
+        from src.generation.llm_client import LLMClient
 
-        client = GeminiClient(api_key="test-key")
+        client = LLMClient(api_key="test-key")
         self._mock_completion(client, "According to [SOURCE_1], Section 302 IPC...")
 
         result = client.generate("What is Section 302?")
         assert result == "According to [SOURCE_1], Section 302 IPC..."
 
     def test_generate_with_system_prompt(self) -> None:
-        from src.generation.gemini_client import GeminiClient
+        from src.generation.llm_client import LLMClient
 
-        client = GeminiClient(api_key="test-key")
+        client = LLMClient(api_key="test-key")
         self._mock_completion(client, "response text")
 
         result = client.generate("query", system_prompt="You are a legal expert.")
         assert result == "response text"
 
     def test_generate_strips_thinking_tags(self) -> None:
-        from src.generation.gemini_client import GeminiClient
+        from src.generation.llm_client import LLMClient
 
-        client = GeminiClient(api_key="test-key")
+        client = LLMClient(api_key="test-key")
         self._mock_completion(
             client,
             "<think>I should reason privately.</think>\n"
@@ -462,9 +422,9 @@ class TestGeminiClientMocked:
         assert result == "Section 302 IPC punishes murder. [SOURCE_1]"
 
     def test_generate_strips_visible_reasoning_prefix(self) -> None:
-        from src.generation.gemini_client import GeminiClient
+        from src.generation.llm_client import LLMClient
 
-        client = GeminiClient(api_key="test-key")
+        client = LLMClient(api_key="test-key")
         self._mock_completion(
             client,
             "Reasoning: I will compare the retrieved sources first.\n\n"
@@ -475,14 +435,44 @@ class TestGeminiClientMocked:
         assert result == "Section 302 IPC punishes murder. [SOURCE_1]"
 
     def test_empty_prompt_raises(self) -> None:
-        from src.generation.gemini_client import GeminiClient, GeminiClientError
+        from src.generation.llm_client import LLMClient, LLMClientError
 
-        client = GeminiClient(api_key="test-key")
-        with pytest.raises(GeminiClientError, match="Prompt must not be empty"):
+        client = LLMClient(api_key="test-key")
+        with pytest.raises(LLMClientError, match="Prompt must not be empty"):
             client.generate("")
 
     def test_no_api_key_raises(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
-            from src.generation.gemini_client import GeminiClient, GeminiClientError
-            with pytest.raises(GeminiClientError, match="No API key"):
-                GeminiClient()
+            from src.generation.llm_client import LLMClient, LLMClientError
+            with pytest.raises(LLMClientError, match="No API key"):
+                LLMClient()
+
+
+class TestFlattenChunk:
+
+    def test_nested_metadata_lifted(self) -> None:
+        from src.generation.prompt_builder import flatten_chunk
+
+        chunk = {"text": "t", "final_score": 0.5, "metadata": {"case_name": "A v. B", "final_score": 0.1}}
+        flat = flatten_chunk(chunk)
+        assert flat["case_name"] == "A v. B"
+        assert flat["final_score"] == 0.5  # top-level value wins
+        assert "case_name" not in chunk  # input untouched
+
+    def test_nested_metadata_used_in_prompt(self, prompt_builder: PromptBuilder) -> None:
+        chunk = {
+            "text": "Whoever commits murder shall be punished.",
+            "metadata": {"doc_type": "statute", "act_name": "Indian Penal Code, 1860", "section_number": "302"},
+        }
+        _, user_prompt = prompt_builder.build_prompt("What is murder?", [chunk])
+        assert "Type: statute" in user_prompt
+        assert "Act: Indian Penal Code, 1860 | Section: 302" in user_prompt
+
+    def test_mapping_source_formatted(self, prompt_builder: PromptBuilder) -> None:
+        from src.retrieval.ipc_bns import IpcBnsMapper
+
+        mapper = IpcBnsMapper()
+        chunk = mapper.as_source_chunk(mapper.find("Section 302 IPC"))
+        _, user_prompt = prompt_builder.build_prompt("Section 302 IPC?", [chunk])
+        assert "Type: mapping" in user_prompt
+        assert "Correspondence table" in user_prompt

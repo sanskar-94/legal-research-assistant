@@ -63,7 +63,7 @@ class EmbeddingService:
     # ------------------------------------------------------------------
 
     def embed_query(self, text: str) -> list[float]:
-        """Alias for :meth:`embed_text` — used by the retrieval pipeline."""
+        """Alias for :meth:`embed_text` - used by the retrieval pipeline."""
         return self.embed_text(text)
 
     def embed_text(self, text: str) -> list[float]:
@@ -127,7 +127,7 @@ class EmbeddingService:
             end = min(start + batch_size, total)
             batch_texts = texts[start:end]
 
-            logger.info(
+            logger.debug(
                 "  Batch %d/%d  (texts %d-%d of %d)",
                 batch_idx + 1,
                 num_batches,

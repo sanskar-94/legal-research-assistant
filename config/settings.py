@@ -1,8 +1,13 @@
 """Central configuration for the Legal Research Assistant."""
 
+import os
 from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────────────────────
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
@@ -11,20 +16,20 @@ CHUNKS_DIR = PROCESSED_DIR / "chunks"
 EVAL_DIR = DATA_DIR / "evaluation"
 CHROMA_DIR = PROJECT_ROOT / "chroma_db"
 
-# ── Embedding Model ───────────────────────────────────────────────
+# Embedding Model
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_BATCH_SIZE = 64
 EMBEDDING_DIMENSION = 384
 
-# ── ChromaDB ──────────────────────────────────────────────────────
+# ChromaDB
 CHROMA_COLLECTION_NAME = "indian_legal"
 
-# ── Chunking ──────────────────────────────────────────────────────
+# Chunking
 CHUNK_TARGET_TOKENS = 450  # 300-600 range
 CHUNK_MAX_TOKENS = 800
 CHUNK_OVERLAP_TOKENS = 50
 
-# ── Retrieval ─────────────────────────────────────────────────────
+# Retrieval
 SEMANTIC_TOP_K = 10
 RERANKED_TOP_K = 4
 RRF_K = 60  # Reciprocal Rank Fusion constant
@@ -51,14 +56,16 @@ RECENCY_BRACKETS = [
 ]
 RECENCY_DEFAULT = 0.2  # >20 years
 
-# ── LLM Provider ─────────────────────────────────────────────────
-GEMINI_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
-GEMINI_TEMPERATURE = 0.1
-GEMINI_MAX_TOKENS = 1024
-GEMINI_RPM_LIMIT = 60  # OpenRouter API rate limit
-LLM_BASE_URL = "https://openrouter.ai/api/v1"
+# LLM provider
+# Any OpenAI-compatible endpoint works. The default is DeepSeek V3.2 served
+# through NVIDIA NIM. Override with LLM_BASE_URL / LLM_MODEL in .env.
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-ai/deepseek-v3.2")
+LLM_TEMPERATURE = 0.1
+LLM_MAX_TOKENS = 1024
+LLM_RPM_LIMIT = 40  # NVIDIA NIM free tier allows 40 requests per minute
 
-# ── Confidence Scoring ────────────────────────────────────────────
+# Confidence Scoring
 CONFIDENCE_WEIGHTS = {
     "retrieval_quality": 0.40,
     "source_agreement": 0.25,
@@ -66,6 +73,9 @@ CONFIDENCE_WEIGHTS = {
     "coverage_score": 0.15,
 }
 
-# ── Scraping ──────────────────────────────────────────────────────
+# IPC to BNS correspondence table
+IPC_BNS_MAPPING_PATH = PROJECT_ROOT / "config" / "ipc_bns_mapping.json"
+
+# Scraping
 INDIANKANOON_DELAY = 1.0  # seconds between requests
 MAX_JUDGEMENTS = 200

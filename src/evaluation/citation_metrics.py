@@ -1,8 +1,9 @@
-"""Citation-quality metrics for generated legal answers.
+"""Answer-quality metrics shared by the evaluation script and the UI.
 
 Citation validity only checks whether ``[SOURCE_N]`` tags point to provided
 source chunks. Citation support is a conservative local proxy for whether the
-cited source text supports the attached legal claim.
+cited source text supports the attached legal claim. Hallucination detection
+flags case names and reporter citations that appear in no source.
 """
 
 from __future__ import annotations
@@ -202,3 +203,77 @@ def compute_citation_quality(
         "citation_support_score": round(support, 4),
         "citation_quality_score": round(blended, 4),
     }
+
+
+# Well-known cases the model may name from general knowledge. Mentioning
+# one of these without a source is not counted as a fabrication.
+_KNOWN_CASE_FRAGMENTS: tuple[str, ...] = (
+    "Kesavananda Bharati",
+    "Maneka Gandhi",
+    "Vishaka",
+    "ADM Jabalpur",
+    "Navtej Singh Johar",
+    "Puttaswamy",
+    "MC Mehta",
+    "Indira Gandhi",
+    "Shreya Singhal",
+    "Golaknath",
+    "Minerva Mills",
+    "S.R. Bommai",
+    "Menaka Gandhi",
+    "State of Maharashtra v. Prakash",
+    "Sharad Birdhichand",
+    "Joseph Shine",
+)
+
+_CITATION_PATTERN: re.Pattern[str] = re.compile(
+    r"\b(?:AIR|SCC|SCR)\s+\d{4}\s+\w+\s+\d+",
+    re.IGNORECASE,
+)
+
+_CASE_NAME_PATTERN: re.Pattern[str] = re.compile(
+    r"([A-Z][A-Za-z.\s]+?)\s+(?:v\.?s?\.?|versus)\s+([A-Z][A-Za-z.\s]+?)(?=\s*[\n,;(.\[]|$)",
+    re.MULTILINE,
+)
+
+_REFUSAL_MARKERS: tuple[str, ...] = (
+    "retrieved sources do not address this question",
+    "do not contain sufficient information",
+    "cannot answer",
+)
+
+
+def detect_hallucinations(
+    response_text: str,
+    source_chunks: list[dict[str, Any]],
+) -> list[str]:
+    """Return case names and citations in the answer that no source contains."""
+    source_text = " ".join(chunk.get("text", "") for chunk in source_chunks).lower()
+    flagged: list[str] = []
+
+    for match in _CASE_NAME_PATTERN.finditer(response_text):
+        name = match.group(0).strip()
+        if any(frag.lower() in name.lower() for frag in _KNOWN_CASE_FRAGMENTS):
+            continue
+        if name.lower() not in source_text:
+            flagged.append(f"Case: {name}")
+
+    for match in _CITATION_PATTERN.finditer(response_text):
+        citation = match.group(0)
+        if citation.lower() not in source_text:
+            flagged.append(f"Citation: {citation}")
+
+    return flagged
+
+
+def is_substantive_response(response_text: str, num_sources: int) -> bool:
+    """An answer counts if it cites a real source and is not a refusal.
+
+    Partial answers that end with "Not covered by the retrieved sources: ..."
+    still count, because the covered part is answered with citations.
+    """
+    lower = response_text.lower()
+    if any(marker in lower for marker in _REFUSAL_MARKERS):
+        return False
+    refs = [int(ref) for ref in SOURCE_REF_PATTERN.findall(response_text)]
+    return any(1 <= ref <= num_sources for ref in refs)

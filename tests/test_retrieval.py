@@ -1,4 +1,4 @@
-"""Tests for src/retrieval/ — query classification, RRF scoring,
+"""Tests for src/retrieval/ - query classification, RRF scoring,
 authority scoring, weight adjustment, and hybrid search.
 """
 
@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-# ── Path bootstrap ──────────────────────────────────────────────────
+# Path bootstrap
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -31,7 +31,7 @@ from src.retrieval.reranker import (
 )
 
 
-# ── Tests: query classification ─────────────────────────────────────
+# Tests: query classification
 
 class TestQueryClassification:
 
@@ -91,14 +91,18 @@ class TestQueryClassification:
         assert HybridSearch.classify_query(query) == expected
 
 
-# ── Tests: keyword extraction ───────────────────────────────────────
+# Tests: keyword extraction
 
 class TestKeywordExtraction:
 
     def test_extracts_section_numbers(self) -> None:
         terms = _extract_keyword_terms("What is Section 302 of IPC?")
         assert any("Section 302" in t for t in terms)
-        assert any("IPC" in t for t in terms)
+        # "IPC" alone would match most of the corpus, so it is dropped here
+        assert "IPC" not in terms
+
+    def test_act_abbreviation_used_when_no_section(self) -> None:
+        assert _extract_keyword_terms("Offences against women under the IPC") == ["IPC"]
 
     def test_extracts_article_numbers(self) -> None:
         terms = _extract_keyword_terms("Article 21 of the Constitution")
@@ -121,7 +125,7 @@ class TestKeywordExtraction:
         assert terms == []
 
 
-# ── Tests: Reciprocal Rank Fusion ───────────────────────────────────
+# Tests: Reciprocal Rank Fusion
 
 class TestRRFScoreCalculation:
 
@@ -159,7 +163,7 @@ class TestRRFScoreCalculation:
         assert scores["a"] == pytest.approx(1.0 / (10 + 1))
 
 
-# ── Tests: authority scoring ────────────────────────────────────────
+# Tests: authority scoring
 
 class TestAuthorityScoring:
 
@@ -227,7 +231,7 @@ class TestAuthorityScoring:
         assert _normalise_court(court_raw) == expected_key
 
 
-# ── Tests: recency weighting ───────────────────────────────────────
+# Tests: recency weighting
 
 class TestRecencyWeight:
 
@@ -248,7 +252,7 @@ class TestRecencyWeight:
         assert w == 0.2  # RECENCY_DEFAULT
 
 
-# ── Tests: weight adjustment based on query type ────────────────────
+# Tests: weight adjustment based on query type
 
 class TestWeightAdjustment:
 
@@ -275,7 +279,7 @@ class TestWeightAdjustment:
             )
 
 
-# ── Tests: reranker ─────────────────────────────────────────────────
+# Tests: reranker
 
 class TestReranker:
 
@@ -350,7 +354,7 @@ class TestReranker:
         assert reranked[0]["final_score"] >= reranked[1]["final_score"]
 
 
-# ── Tests: hybrid search (mocked vectorstore) ──────────────────────
+# Tests: hybrid search (mocked vectorstore)
 
 class TestHybridSearch:
 
@@ -422,3 +426,66 @@ class TestHybridSearch:
         results = hs.search("Section 302 IPC")
         # Should still return semantic results even if keyword fails
         assert len(results) > 0
+
+
+class TestHybridSearchScoring:
+
+    def _store(self) -> MagicMock:
+        store = MagicMock()
+        store.query.return_value = {
+            "ids": [["sem_1"]],
+            "documents": [["Article 21 protects life and personal liberty."]],
+            "metadatas": [[{"doc_type": "constitution"}]],
+            "distances": [[0.25]],
+        }
+
+        def fake_get(where_document, include, limit):
+            if where_document["$contains"] == "Section 302":
+                return {
+                    "ids": ["kw_1"],
+                    "documents": ["Section 302. Punishment for murder."],
+                    "metadatas": [{"doc_type": "statute"}],
+                    "embeddings": [[1.0, 0.0]],
+                }
+            return {"ids": [], "documents": [], "metadatas": [], "embeddings": []}
+
+        store.get.side_effect = fake_get
+        return store
+
+    def _embedder(self) -> MagicMock:
+        embedder = MagicMock()
+        embedder.embed_query.return_value = [0.6, 0.8]
+        return embedder
+
+    def test_cosine_distance_converted_to_similarity(self) -> None:
+        results = HybridSearch(self._store(), self._embedder()).search("right to life")
+        sem = next(r for r in results if r["chunk_id"] == "sem_1")
+        assert sem["semantic_score"] == pytest.approx(0.75)
+
+    def test_keyword_hit_gets_semantic_score(self) -> None:
+        results = HybridSearch(self._store(), self._embedder()).search("section 302 ipc")
+        kw = next(r for r in results if r["chunk_id"] == "kw_1")
+        # cosine([0.6, 0.8], [1, 0]) = 0.6
+        assert kw["semantic_score"] == pytest.approx(0.6)
+
+    def test_lowercase_query_matches_title_case_text(self) -> None:
+        store = self._store()
+        HybridSearch(store, self._embedder()).search("section 302")
+        searched = [c.kwargs["where_document"]["$contains"] for c in store.get.call_args_list]
+        assert "Section 302" in searched
+
+    def test_conceptual_query_skips_keyword_path(self) -> None:
+        store = self._store()
+        HybridSearch(store, self._embedder()).search("explain the doctrine of basic structure")
+        store.get.assert_not_called()
+
+
+class TestRerankerRrfNormalisation:
+
+    def test_top_ranked_rrf_counts_fully(self) -> None:
+        reranker = AuthorityReranker()
+        top = {"chunk_id": "a", "semantic_score": 0.0, "rrf_score": 1.0 / (RRF_K + 1), "metadata": {}}
+        none = {"chunk_id": "b", "semantic_score": 0.0, "rrf_score": 0.0, "metadata": {}}
+        ranked = reranker.rerank([none, top], top_k=2)
+        assert ranked[0]["chunk_id"] == "a"
+        assert ranked[0]["final_score"] - ranked[1]["final_score"] == pytest.approx(0.25)

@@ -14,53 +14,26 @@ from unittest.mock import MagicMock
 
 import pytest
 
-# ── Path bootstrap ──────────────────────────────────────────────────
+# Path bootstrap
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-# ── Mock heavy third-party deps that are imported at module level ───
-# google.generativeai is required by src.generation.gemini_client
-# which is re-exported from src.generation.__init__.  We install
-# lightweight stubs so the entire test suite can be collected without
-# needing the real Google GenAI SDK or python-dotenv installed.
-if "google" not in sys.modules:
-    _google = ModuleType("google")
-    _google_genai = ModuleType("google.generativeai")
-    _google_genai_types = ModuleType("google.generativeai.types")
-    _google_genai.types = _google_genai_types  # type: ignore[attr-defined]
-    _google_genai.configure = lambda **kw: None  # type: ignore[attr-defined]
-    _google_genai.GenerativeModel = MagicMock  # type: ignore[attr-defined]
-    _google_genai_types.GenerationConfig = MagicMock  # type: ignore[attr-defined]
-    sys.modules["google"] = _google
-    sys.modules["google.generativeai"] = _google_genai
-    sys.modules["google.generativeai.types"] = _google_genai_types
-
-# Stub the new google.genai SDK so GeminiClient.__init__ can use it
-if "google.genai" not in sys.modules:
-    _google_mod = sys.modules["google"]
-    _google_genai_new = ModuleType("google.genai")
-    _google_genai_new_types = ModuleType("google.genai.types")
-    _google_genai_new.Client = MagicMock  # type: ignore[attr-defined]
-    _google_genai_new.types = _google_genai_new_types  # type: ignore[attr-defined]
-    _google_genai_new_types.GenerateContentConfig = MagicMock  # type: ignore[attr-defined]
-    _google_mod.genai = _google_genai_new  # type: ignore[attr-defined]
-    sys.modules["google.genai"] = _google_genai_new
-    sys.modules["google.genai.types"] = _google_genai_new_types
-
+# Stub python-dotenv and the openai SDK so the suite runs without them
+# installed and without any network access. The LLM client tests patch
+# the OpenAI object directly.
 if "dotenv" not in sys.modules:
     _dotenv = ModuleType("dotenv")
     _dotenv.load_dotenv = lambda *a, **kw: None  # type: ignore[attr-defined]
     sys.modules["dotenv"] = _dotenv
 
-# Stub openai SDK so GeminiClient can construct without real SDK
 if "openai" not in sys.modules:
     _openai = ModuleType("openai")
     _openai.OpenAI = MagicMock  # type: ignore[attr-defined]
     sys.modules["openai"] = _openai
 
 
-# ── Sample texts ────────────────────────────────────────────────────
+# Sample texts
 
 SAMPLE_JUDGEMENT_TEXT = """\
 State of Maharashtra v. Prakash
@@ -154,7 +127,7 @@ writs for the enforcement of any of the rights conferred by this Part.
 """
 
 
-# ── Chunk metadata factory ─────────────────────────────────────────
+# Chunk metadata factory
 
 def make_chunk_metadata(
     doc_id: str = "test-doc-001",
@@ -181,7 +154,7 @@ def make_chunk_metadata(
     return {**base, **overrides}
 
 
-# ── Pytest fixtures ─────────────────────────────────────────────────
+# Pytest fixtures
 
 @pytest.fixture()
 def judgement_text() -> str:

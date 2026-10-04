@@ -1,42 +1,22 @@
-"""Integration tests for the full pipeline flow.
+"""Integration tests that chain the real retrieval, prompt and parsing stages.
 
-Since there is no standalone ``src/pipeline.py`` module yet, these tests
-exercise the end-to-end pipeline by composing the retrieval, generation,
-and parsing stages together with all external services mocked.
+External services (vector store, embeddings, LLM) are mocked. The
+``LegalResearchPipeline`` class itself is covered in test_legal_pipeline.py.
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# ── Path bootstrap ──────────────────────────────────────────────────
+# Path bootstrap
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-# ── Mock heavy third-party deps before importing src.generation ─────
-if "google" not in sys.modules:
-    _google = ModuleType("google")
-    _google_genai = ModuleType("google.generativeai")
-    _google_genai_types = ModuleType("google.generativeai.types")
-    _google_genai.types = _google_genai_types  # type: ignore[attr-defined]
-    _google_genai.configure = lambda **kw: None  # type: ignore[attr-defined]
-    _google_genai.GenerativeModel = MagicMock  # type: ignore[attr-defined]
-    _google_genai_types.GenerationConfig = MagicMock  # type: ignore[attr-defined]
-    sys.modules["google"] = _google
-    sys.modules["google.generativeai"] = _google_genai
-    sys.modules["google.generativeai.types"] = _google_genai_types
-
-if "dotenv" not in sys.modules:
-    _dotenv = ModuleType("dotenv")
-    _dotenv.load_dotenv = lambda *a, **kw: None  # type: ignore[attr-defined]
-    sys.modules["dotenv"] = _dotenv
 
 from config.settings import CONFIDENCE_WEIGHTS
 from src.generation.prompt_builder import PromptBuilder
@@ -45,13 +25,13 @@ from src.retrieval.hybrid_search import HybridSearch
 from src.retrieval.reranker import AuthorityReranker
 
 
-# ── Pipeline helper ─────────────────────────────────────────────────
+# Pipeline helper
 
 def run_pipeline(
     query: str,
     vectorstore: Any,
     embedding_service: Any,
-    gemini_generate: Any,
+    llm_generate: Any,
     top_k: int = 6,
 ) -> dict[str, Any]:
     """Execute the full retrieval-generation pipeline.
@@ -60,7 +40,7 @@ def run_pipeline(
     1. Hybrid search
     2. Re-rank
     3. Build prompt
-    4. Generate response (via Gemini)
+    4. Generate response (via LLM)
     5. Parse citations
     6. Compute confidence
     """
@@ -77,7 +57,7 @@ def run_pipeline(
     sys_prompt, user_prompt = builder.build_prompt(query, reranked)
 
     # Stage 4: generate
-    raw_response = gemini_generate(user_prompt, system_prompt=sys_prompt)
+    raw_response = llm_generate(user_prompt, system_prompt=sys_prompt)
 
     # Stage 5: parse
     parser = ResponseParser()
@@ -137,7 +117,7 @@ def _compute_confidence(
     return round(min(max(score, 0.0), 1.0), 4)
 
 
-# ── Fixtures ────────────────────────────────────────────────────────
+# Fixtures
 
 def _make_rich_vectorstore() -> MagicMock:
     """Build a vectorstore mock with realistic legal chunks."""
@@ -186,7 +166,7 @@ def empty_vectorstore() -> MagicMock:
 
 
 @pytest.fixture()
-def mock_gemini() -> MagicMock:
+def mock_llm() -> MagicMock:
     def fake_generate(prompt: str, system_prompt: str | None = None) -> str:
         return (
             "According to [SOURCE_1], Section 302 of IPC provides punishment "
@@ -197,7 +177,7 @@ def mock_gemini() -> MagicMock:
     return MagicMock(side_effect=fake_generate)
 
 
-# ── Tests: full pipeline flow ───────────────────────────────────────
+# Tests: full pipeline flow
 
 class TestFullPipelineFlow:
 
@@ -205,13 +185,13 @@ class TestFullPipelineFlow:
         self,
         rich_vectorstore: MagicMock,
         mock_embedding_service: MagicMock,
-        mock_gemini: MagicMock,
+        mock_llm: MagicMock,
     ) -> None:
         result = run_pipeline(
             "What is Section 302 IPC?",
             rich_vectorstore,
             mock_embedding_service,
-            mock_gemini,
+            mock_llm,
         )
         assert "query" in result
         assert "cited_response" in result
@@ -223,13 +203,13 @@ class TestFullPipelineFlow:
         self,
         rich_vectorstore: MagicMock,
         mock_embedding_service: MagicMock,
-        mock_gemini: MagicMock,
+        mock_llm: MagicMock,
     ) -> None:
         result = run_pipeline(
             "What is Section 302 IPC?",
             rich_vectorstore,
             mock_embedding_service,
-            mock_gemini,
+            mock_llm,
         )
         cited = result["cited_response"]
         assert isinstance(cited, CitedResponse)
@@ -239,13 +219,13 @@ class TestFullPipelineFlow:
         self,
         rich_vectorstore: MagicMock,
         mock_embedding_service: MagicMock,
-        mock_gemini: MagicMock,
+        mock_llm: MagicMock,
     ) -> None:
         result = run_pipeline(
             "What is Section 302 IPC?",
             rich_vectorstore,
             mock_embedding_service,
-            mock_gemini,
+            mock_llm,
         )
         assert "citation-badge" in result["cited_response"].answer_html
 
@@ -253,19 +233,19 @@ class TestFullPipelineFlow:
         self,
         rich_vectorstore: MagicMock,
         mock_embedding_service: MagicMock,
-        mock_gemini: MagicMock,
+        mock_llm: MagicMock,
     ) -> None:
         result = run_pipeline(
             "What is Section 302 IPC?",
             rich_vectorstore,
             mock_embedding_service,
-            mock_gemini,
+            mock_llm,
         )
         scores = [r["final_score"] for r in result["reranked_chunks"]]
         assert scores == sorted(scores, reverse=True)
 
 
-# ── Tests: pipeline with empty vectorstore ──────────────────────────
+# Tests: pipeline with empty vectorstore
 
 class TestPipelineEmptyVectorstore:
 
@@ -300,7 +280,7 @@ class TestPipelineEmptyVectorstore:
         assert result["reranked_chunks"] == []
 
 
-# ── Tests: confidence scoring ───────────────────────────────────────
+# Tests: confidence scoring
 
 class TestConfidenceScoring:
 
@@ -308,13 +288,13 @@ class TestConfidenceScoring:
         self,
         rich_vectorstore: MagicMock,
         mock_embedding_service: MagicMock,
-        mock_gemini: MagicMock,
+        mock_llm: MagicMock,
     ) -> None:
         result = run_pipeline(
             "What is Section 302 IPC?",
             rich_vectorstore,
             mock_embedding_service,
-            mock_gemini,
+            mock_llm,
         )
         assert 0.0 <= result["confidence"] <= 1.0
 
@@ -376,7 +356,7 @@ class TestConfidenceScoring:
         assert 0.0 < score <= 1.0
 
 
-# ── Tests: error handling at each stage ─────────────────────────────
+# Tests: error handling at each stage
 
 class TestPipelineErrorHandling:
 
@@ -410,20 +390,20 @@ class TestPipelineErrorHandling:
                 MagicMock(return_value="ok"),
             )
 
-    def test_gemini_failure(
+    def test_llm_failure(
         self,
         rich_vectorstore: MagicMock,
         mock_embedding_service: MagicMock,
     ) -> None:
-        bad_gemini = MagicMock(
-            side_effect=RuntimeError("Gemini API unavailable")
+        bad_llm = MagicMock(
+            side_effect=RuntimeError("LLM API unavailable")
         )
-        with pytest.raises(RuntimeError, match="Gemini API unavailable"):
+        with pytest.raises(RuntimeError, match="LLM API unavailable"):
             run_pipeline(
                 "What is Section 302 IPC?",
                 rich_vectorstore,
                 mock_embedding_service,
-                bad_gemini,
+                bad_llm,
             )
 
     def test_prompt_builder_empty_query(

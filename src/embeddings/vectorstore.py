@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 # Metadata fields that are stored in ChromaDB for filtering.
 _METADATA_FIELDS: tuple[str, ...] = (
+    "doc_id",
+    "chunk_index",
     "doc_type",
     "court",
     "date",
@@ -42,7 +44,7 @@ def _sanitise_metadata_value(value: Any) -> str | int | float | bool:
 def _build_chroma_metadata(chunk) -> dict[str, str | int | float | bool]:
     """Extract and sanitise metadata from a Chunk's ChunkMetadata model.
 
-    Returns a *new* dict — the original model is never mutated.
+    Returns a *new* dict - the original model is never mutated.
     """
     raw_meta = chunk.metadata
     sanitised: dict[str, str | int | float | bool] = {}
@@ -115,7 +117,7 @@ class VectorStore:
             Pre-computed embedding vectors aligned 1-to-1 with *chunks*.
         """
         if not chunks:
-            logger.warning("add_chunks called with an empty list — nothing to upsert.")
+            logger.warning("add_chunks called with an empty list - nothing to upsert.")
             return
 
         if len(chunks) != len(embeddings):
@@ -160,7 +162,7 @@ class VectorStore:
         -------
         list[dict]
             Each dict contains ``id``, ``text``, ``metadata``, and ``score``
-            (cosine distance — lower is more similar).
+            (cosine distance - lower is more similar).
         """
         query_kwargs: dict[str, Any] = {
             "query_embeddings": [query_embedding],
@@ -223,7 +225,7 @@ class VectorStore:
         Returns
         -------
         dict
-            ``count`` — total documents, ``sample_metadata`` — up to 5
+            ``count`` - total documents, ``sample_metadata`` - up to 5
             metadata dicts for quick inspection.
         """
         count = self._collection.count()

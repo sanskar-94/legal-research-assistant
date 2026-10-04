@@ -1,8 +1,8 @@
-"""LLM API wrapper with rate limiting and retry logic.
+"""Client for the answer-generation LLM.
 
-Provides a thin, immutable client around the OpenAI-compatible API
-(NVIDIA NIM / DeepSeek) with token-bucket rate limiting and
-exponential-backoff retries via tenacity.
+Talks to any OpenAI-compatible chat endpoint. The project default is
+DeepSeek V3.2 on NVIDIA NIM (see ``config.settings``). Requests are rate
+limited with a sliding window and retried with exponential backoff.
 """
 
 from __future__ import annotations
@@ -23,14 +23,17 @@ from tenacity import (
 )
 
 from config.settings import (
-    GEMINI_MAX_TOKENS,
-    GEMINI_MODEL,
-    GEMINI_RPM_LIMIT,
-    GEMINI_TEMPERATURE,
     LLM_BASE_URL,
+    LLM_MAX_TOKENS,
+    LLM_MODEL,
+    LLM_RPM_LIMIT,
+    LLM_TEMPERATURE,
 )
 
 load_dotenv()
+
+# Checked in order when no key is passed explicitly.
+_API_KEY_ENV_VARS = ("NVIDIA_API_KEY", "LLM_API_KEY")
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +52,7 @@ _ANSWER_PREFIX_PATTERN = re.compile(
 )
 
 
-class GeminiClientError(Exception):
+class LLMClientError(Exception):
     """Raised when LLM API interaction fails after all retries."""
 
 
@@ -90,14 +93,13 @@ class _RateLimiter:
             self._timestamps.append(time.monotonic())
 
 
-class GeminiClient:
-    """Immutable wrapper around the OpenAI-compatible LLM API (NVIDIA NIM).
+class LLMClient:
+    """Wrapper around an OpenAI-compatible chat completions API.
 
     Args:
         api_key:  API key. Falls back to ``NVIDIA_API_KEY`` then
-                  ``GEMINI_API_KEY`` environment variables when *None*.
-        model:    Model identifier. Defaults to the value in
-                  ``config.settings.GEMINI_MODEL``.
+                  ``LLM_API_KEY`` from the environment when *None*.
+        model:    Model identifier. Defaults to ``config.settings.LLM_MODEL``.
     """
 
     def __init__(
@@ -105,13 +107,14 @@ class GeminiClient:
         api_key: Optional[str] = None,
         model: Optional[str] = None,
     ) -> None:
-        resolved_key = (
-            api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("GEMINI_API_KEY")
+        resolved_key = api_key or next(
+            (os.getenv(name) for name in _API_KEY_ENV_VARS if os.getenv(name)),
+            None,
         )
         if not resolved_key:
-            raise GeminiClientError(
-                "No API key provided. Set OPENROUTER_API_KEY in your "
-                "environment or pass api_key explicitly."
+            raise LLMClientError(
+                "No API key provided. Set NVIDIA_API_KEY in .env "
+                "or pass api_key explicitly."
             )
 
         from openai import OpenAI
@@ -121,17 +124,17 @@ class GeminiClient:
             api_key=resolved_key,
         )
 
-        self._model_name: str = model or GEMINI_MODEL
-        self._rate_limiter = _RateLimiter(max_rpm=GEMINI_RPM_LIMIT)
+        self._model_name: str = model or LLM_MODEL
+        self._rate_limiter = _RateLimiter(max_rpm=LLM_RPM_LIMIT)
 
         logger.info(
-            "GeminiClient initialised — model=%s, rpm_limit=%d, base_url=%s",
+            "LLMClient ready: model=%s, rpm_limit=%d, base_url=%s",
             self._model_name,
-            GEMINI_RPM_LIMIT,
+            LLM_RPM_LIMIT,
             LLM_BASE_URL,
         )
 
-    # ── Public API ────────────────────────────────────────────────────
+    # Public API
 
     def generate(
         self,
@@ -149,15 +152,15 @@ class GeminiClient:
             The generated text as a plain string.
 
         Raises:
-            GeminiClientError: If generation fails after all retries.
+            LLMClientError: If generation fails after all retries.
         """
         if not prompt:
-            raise GeminiClientError("Prompt must not be empty.")
+            raise LLMClientError("Prompt must not be empty.")
 
         self._wait_for_rate_limit()
         return self._call_api(prompt, system_prompt)
 
-    # ── Internal helpers ──────────────────────────────────────────────
+    # Internal helpers
 
     def _wait_for_rate_limit(self) -> None:
         self._rate_limiter.wait_if_needed()
@@ -185,24 +188,24 @@ class GeminiClient:
             completion = self._client.chat.completions.create(
                 model=self._model_name,
                 messages=messages,
-                temperature=GEMINI_TEMPERATURE,
-                max_tokens=GEMINI_MAX_TOKENS,
+                temperature=LLM_TEMPERATURE,
+                max_tokens=LLM_MAX_TOKENS,
                 top_p=0.95,
             )
 
             response_text = completion.choices[0].message.content
 
             if not response_text:
-                raise GeminiClientError("LLM returned an empty response.")
+                raise LLMClientError("LLM returned an empty response.")
 
             response_text = _strip_model_thinking(response_text)
             if not response_text:
-                raise GeminiClientError("LLM returned only hidden reasoning.")
+                raise LLMClientError("LLM returned only hidden reasoning.")
 
-            logger.debug("LLM response received — %d characters.", len(response_text))
+            logger.debug("LLM response received - %d characters.", len(response_text))
             return response_text
 
-        except GeminiClientError:
+        except LLMClientError:
             raise
         except Exception as exc:
             logger.warning("LLM API call failed (will retry): %s", exc)

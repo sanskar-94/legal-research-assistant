@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections import defaultdict
-from typing import Any
+from typing import Any, Sequence
 
 from config.settings import RRF_K, SEMANTIC_TOP_K
 
 logger = logging.getLogger(__name__)
 
-# ── Query classification patterns ─────────────────────────────────────
+# Query classification patterns
 _SECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bSection\s+\d+", re.IGNORECASE),
     re.compile(r"\bArticle\s+\d+", re.IGNORECASE),
@@ -20,6 +21,7 @@ _SECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bIPC\b"),
     re.compile(r"\bCrPC\b"),
     re.compile(r"\bCPC\b"),
+    re.compile(r"\bBNS\b"),
 )
 
 _CASE_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -29,6 +31,11 @@ _CASE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bSCC\s+\d+\b", re.IGNORECASE),
     re.compile(r"\(\d{4}\)\s+\d+\s+SCC\b"),
 )
+
+# Exact matches fetched per term before ranking by similarity. Common
+# identifiers such as "Section 302" occur in thousands of judgments, and
+# ChromaDB returns ``$contains`` matches in storage order, not by relevance.
+_KEYWORD_POOL_SIZE = 200
 
 # Weight presets per classification  (semantic_weight, keyword_weight)
 _CLASSIFICATION_WEIGHTS: dict[str, tuple[float, float]] = {
@@ -54,11 +61,6 @@ def _extract_keyword_terms(query: str) -> list[str]:
     for match in re.finditer(r"(Article\s+\d+[A-Za-z]*)", query, re.IGNORECASE):
         terms.append(match.group(0))
 
-    # Common act abbreviations
-    for abbr in ("IPC", "CrPC", "CPC"):
-        if re.search(rf"\b{abbr}\b", query):
-            terms.append(abbr)
-
     # AIR / SCC citations
     for match in re.finditer(r"(AIR\s+\d{4}\s+\w+\s+\d+)", query):
         terms.append(match.group(0))
@@ -66,6 +68,13 @@ def _extract_keyword_terms(query: str) -> list[str]:
         terms.append(match.group(0))
     for match in re.finditer(r"(SCC\s+\d+)", query, re.IGNORECASE):
         terms.append(match.group(0))
+
+    # A bare act abbreviation matches a large part of the corpus, so it is
+    # only used when the query names no specific section or citation.
+    if not terms:
+        for abbr in ("IPC", "CrPC", "CPC", "BNS"):
+            if re.search(rf"\b{abbr}\b", query):
+                terms.append(abbr)
 
     # Deduplicate while preserving order
     seen: set[str] = set()
@@ -76,6 +85,18 @@ def _extract_keyword_terms(query: str) -> list[str]:
             seen.add(normalised)
             unique.append(term.strip())
     return unique
+
+
+def _case_variants(term: str) -> list[str]:
+    """ChromaDB ``$contains`` is case-sensitive, so try the usual spellings."""
+    variants = [term, term[:1].upper() + term[1:].lower(), term.lower(), term.upper()]
+    return list(dict.fromkeys(variants))
+
+
+def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    return dot / norm if norm else 0.0
 
 
 def _reciprocal_rank_fusion(
@@ -112,7 +133,7 @@ class HybridSearch:
         self._vectorstore = vectorstore
         self._embedding_service = embedding_service
 
-    # ── Query classification ──────────────────────────────────────────
+    # Query classification
 
     @staticmethod
     def classify_query(query: str) -> str:
@@ -133,15 +154,14 @@ class HybridSearch:
             return "case_lookup"
         return "conceptual"
 
-    # ── Semantic search ───────────────────────────────────────────────
+    # Semantic search
 
     def _semantic_search(
         self,
-        query: str,
+        query_embedding: list[float],
         top_k: int,
     ) -> list[dict[str, Any]]:
-        """Embed *query* and retrieve nearest neighbours from ChromaDB."""
-        query_embedding: list[float] = self._embedding_service.embed_query(query)
+        """Retrieve nearest neighbours of *query_embedding* from ChromaDB."""
         results = self._vectorstore.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
@@ -158,9 +178,9 @@ class HybridSearch:
         distances = results.get("distances", [[]])[0]
 
         for idx, chunk_id in enumerate(ids):
-            # ChromaDB L2 distance -> similarity (lower distance = better)
-            distance = distances[idx] if idx < len(distances) else 0.0
-            semantic_score = 1.0 / (1.0 + distance)
+            # The collection uses cosine space, so distance = 1 - cosine similarity.
+            distance = distances[idx] if idx < len(distances) else 1.0
+            semantic_score = max(0.0, 1.0 - distance)
 
             hits.append({
                 "chunk_id": chunk_id,
@@ -170,47 +190,63 @@ class HybridSearch:
             })
         return hits
 
-    # ── Keyword search ────────────────────────────────────────────────
+    # Keyword search
 
     def _keyword_search(
         self,
         query: str,
+        query_embedding: list[float],
         top_k: int,
     ) -> list[dict[str, Any]]:
-        """Run keyword-based retrieval via ChromaDB ``where_document``."""
+        """Exact-match retrieval of legal identifiers via ``where_document``.
+
+        Only identifiers such as "Section 302", "Article 21" or an AIR/SCC
+        citation are searched; a conceptual query with none of these skips
+        the keyword path. Each hit is scored against the query embedding so
+        that keyword-only hits get a real semantic score for re-ranking.
+        """
         terms = _extract_keyword_terms(query)
         if not terms:
-            # Fall back to the full query as a single keyword phrase
-            terms = [query]
+            return []
 
         all_hits: dict[str, dict[str, Any]] = {}
         for term in terms:
-            try:
-                results = self._vectorstore.get(
-                    where_document={"$contains": term},
-                    include=["documents", "metadatas"],
-                    limit=top_k,
-                )
-            except Exception:
-                logger.debug("Keyword search failed for term '%s'", term, exc_info=True)
-                continue
-
-            if not results or not results.get("ids"):
-                continue
-
-            for idx, chunk_id in enumerate(results["ids"]):
-                if chunk_id in all_hits:
+            for variant in _case_variants(term):
+                try:
+                    results = self._vectorstore.get(
+                        where_document={"$contains": variant},
+                        include=["documents", "metadatas", "embeddings"],
+                        limit=max(top_k, _KEYWORD_POOL_SIZE),
+                    )
+                except Exception:
+                    logger.debug("Keyword search failed for '%s'", variant, exc_info=True)
                     continue
-                all_hits[chunk_id] = {
-                    "chunk_id": chunk_id,
-                    "text": results["documents"][idx] if idx < len(results.get("documents", [])) else "",
-                    "metadata": results["metadatas"][idx] if idx < len(results.get("metadatas", [])) else {},
-                    "semantic_score": 0.0,
-                }
 
-        return list(all_hits.values())[:top_k]
+                if not results or results.get("ids") is None or len(results["ids"]) == 0:
+                    continue
 
-    # ── Public search method ──────────────────────────────────────────
+                documents = results.get("documents")
+                metadatas = results.get("metadatas")
+                embeddings = results.get("embeddings")
+                for idx, chunk_id in enumerate(results["ids"]):
+                    if chunk_id in all_hits:
+                        continue
+                    embedding = embeddings[idx] if embeddings is not None and idx < len(embeddings) else None
+                    all_hits[chunk_id] = {
+                        "chunk_id": chunk_id,
+                        "text": documents[idx] if documents is not None and idx < len(documents) else "",
+                        "metadata": metadatas[idx] if metadatas is not None and idx < len(metadatas) else {},
+                        "semantic_score": (
+                            max(0.0, _cosine_similarity(query_embedding, embedding))
+                            if embedding is not None
+                            else 0.0
+                        ),
+                    }
+
+        hits = sorted(all_hits.values(), key=lambda h: h["semantic_score"], reverse=True)
+        return hits[:top_k]
+
+    # Public search method
 
     def search(self, query: str, top_k: int = SEMANTIC_TOP_K) -> list[dict[str, Any]]:
         """Execute hybrid search and return merged results sorted by RRF score.
@@ -233,12 +269,13 @@ class HybridSearch:
         classification = self.classify_query(query)
         sem_weight, kw_weight = _CLASSIFICATION_WEIGHTS[classification]
         logger.info(
-            "Query classified as '%s' — semantic=%.1f, keyword=%.1f",
+            "Query classified as '%s' - semantic=%.1f, keyword=%.1f",
             classification, sem_weight, kw_weight,
         )
 
-        semantic_hits = self._semantic_search(query, top_k)
-        keyword_hits = self._keyword_search(query, top_k)
+        query_embedding: list[float] = self._embedding_service.embed_query(query)
+        semantic_hits = self._semantic_search(query_embedding, top_k)
+        keyword_hits = self._keyword_search(query, query_embedding, top_k)
 
         logger.debug(
             "Semantic hits: %d, keyword hits: %d",
@@ -249,10 +286,6 @@ class HybridSearch:
         semantic_ranked = [h["chunk_id"] for h in semantic_hits]
         keyword_ranked = [h["chunk_id"] for h in keyword_hits]
 
-        # Weighted RRF: duplicate each list proportionally
-        # We simulate weighting by scaling the RRF contribution
-        raw_rrf = _reciprocal_rank_fusion([semantic_ranked, keyword_ranked])
-
         # Collect every hit by chunk_id (prefer semantic result for score)
         hits_by_id: dict[str, dict[str, Any]] = {}
         for hit in semantic_hits:
@@ -261,14 +294,9 @@ class HybridSearch:
             if hit["chunk_id"] not in hits_by_id:
                 hits_by_id[hit["chunk_id"]] = {**hit}
 
-        # Separate RRF contributions from each ranked list
-        semantic_rrf: dict[str, float] = defaultdict(float)
-        for rank, cid in enumerate(semantic_ranked, start=1):
-            semantic_rrf[cid] = 1.0 / (RRF_K + rank)
-
-        keyword_rrf: dict[str, float] = defaultdict(float)
-        for rank, cid in enumerate(keyword_ranked, start=1):
-            keyword_rrf[cid] = 1.0 / (RRF_K + rank)
+        # RRF contribution of each list, weighted by the query classification
+        semantic_rrf = _reciprocal_rank_fusion([semantic_ranked])
+        keyword_rrf = _reciprocal_rank_fusion([keyword_ranked])
 
         # Compute weighted RRF score per chunk
         merged: list[dict[str, Any]] = []

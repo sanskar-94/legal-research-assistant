@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import uuid
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ChunkMetadata(BaseModel):
@@ -28,8 +27,27 @@ class ChunkMetadata(BaseModel):
 
 
 class Chunk(BaseModel):
-    """A single text chunk with its associated metadata."""
+    """A single text chunk with its associated metadata.
 
-    chunk_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    When no ``chunk_id`` is given it is derived from the document id and
+    chunk index, so rebuilding the corpus upserts the same ids instead of
+    adding duplicates to the vector store.
+    """
+
+    chunk_id: str
     text: str
     metadata: ChunkMetadata
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_chunk_id(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or data.get("chunk_id"):
+            return data
+        meta = data.get("metadata")
+        if isinstance(meta, ChunkMetadata):
+            doc_id, index = meta.doc_id, meta.chunk_index
+        elif isinstance(meta, dict):
+            doc_id, index = meta.get("doc_id", "doc"), meta.get("chunk_index", 0)
+        else:
+            return data
+        return {**data, "chunk_id": f"{doc_id}::{index}"}

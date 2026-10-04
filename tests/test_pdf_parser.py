@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# ── Path bootstrap ──────────────────────────────────────────────────
+# Path bootstrap
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -22,7 +22,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from src.ingestion.pdf_parser import OCR_CHAR_THRESHOLD, ParsedPage, parse_pdf
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
+# Helpers
 
 def _make_fitz_page(text: str) -> MagicMock:
     """Create a mock fitz page that returns *text* from get_text."""
@@ -44,7 +44,7 @@ def _make_fitz_doc(pages_text: list[str]) -> MagicMock:
     return doc
 
 
-# ── Fixtures ────────────────────────────────────────────────────────
+# Fixtures
 
 @pytest.fixture()
 def pdf_path(tmp_path: Path) -> Path:
@@ -59,7 +59,7 @@ def nonexistent_pdf(tmp_path: Path) -> Path:
     return tmp_path / "does_not_exist.pdf"
 
 
-# ── Tests: digital PDF text extraction ──────────────────────────────
+# Tests: digital PDF text extraction
 
 class TestDigitalPDFExtraction:
     """Tests for the happy path where all pages have sufficient text."""
@@ -112,7 +112,7 @@ class TestDigitalPDFExtraction:
         assert result[0].text == raw.strip()
 
 
-# ── Tests: OCR fallback detection ───────────────────────────────────
+# Tests: OCR fallback detection
 
 class TestOCRFallback:
     """Verify OCR is triggered when a page has fewer than OCR_CHAR_THRESHOLD chars."""
@@ -230,7 +230,7 @@ class TestOCRFallback:
         assert result[0].text == "tiny"
 
 
-# ── Tests: non-existent and invalid files ───────────────────────────
+# Tests: non-existent and invalid files
 
 class TestFileErrors:
 
@@ -245,7 +245,7 @@ class TestFileErrors:
             parse_pdf(txt_file)
 
 
-# ── Tests: empty PDF ────────────────────────────────────────────────
+# Tests: empty PDF
 
 class TestEmptyPDF:
 
@@ -282,7 +282,7 @@ class TestEmptyPDF:
         assert mock_ocr.call_count == 3
 
 
-# ── Tests: ParsedPage model ────────────────────────────────────────
+# Tests: ParsedPage model
 
 class TestParsedPageModel:
 

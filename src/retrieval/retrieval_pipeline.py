@@ -101,6 +101,6 @@ class RetrievalPipeline:
             })
 
         logger.info(
-            "Retrieval pipeline complete — %d results returned", len(normalised),
+            "Retrieval pipeline complete - %d results returned", len(normalised),
         )
         return normalised
