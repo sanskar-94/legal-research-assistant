@@ -21,7 +21,7 @@ import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -109,7 +109,6 @@ class StatuteSource:
     slug: str
     urls: tuple[str, ...]  # primary URL first, then fallbacks
     act_id: str = ""  # India Code act identifier (if applicable)
-    sections: tuple[str, ...] = ()  # specific section pages to crawl
 
 
 # ---------------------------------------------------------------------------
@@ -162,11 +161,6 @@ STATUTES: list[StatuteSource] = [
 INDIACODE_SECTION_LIST = (
     "https://www.indiacode.nic.in/show-data"
     "?actid={act_id}&sectionId=&sectionno=&orderno="
-)
-
-INDIACODE_SECTION_DETAIL = (
-    "https://www.indiacode.nic.in/show-data"
-    "?actid={act_id}&sectionId={section_id}&sectionno={section_no}&orderno={order_no}"
 )
 
 

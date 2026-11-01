@@ -1,13 +1,7 @@
-"""Download Indian legal datasets from HuggingFace and save as JSON.
+"""Download the Indian-law datasets from Hugging Face into data/raw/.
 
-Pulls the following datasets:
-  - viber1/indian-law-dataset (24K QA pairs)
-  - ninadn/indian-legal (7K judgments + summaries)
-  - vihaannnn/Indian-Supreme-Court-Judgements-Chunked (pre-chunked SC judgments)
-  - ShreyasP123/Legal-Dataset-for-india (1470 chunked legal texts)
-  - nisaar/Constitution_of_India (structured articles)
-
-Saves each split as a separate JSON file under data/raw/.
+Each split of each dataset in ``DATASETS`` is saved as
+``data/raw/<slug>_<split>.json``.
 
 Usage:
     python scripts/download_hf_datasets.py
@@ -19,6 +13,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Path bootstrap – allow ``python scripts/download_hf_datasets.py``
@@ -27,7 +22,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPT_DIR.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from config.settings import PROJECT_ROOT, RAW_DIR  # noqa: E402
+from config.settings import RAW_DIR  # noqa: E402
 
 from tenacity import (  # noqa: E402
     retry,
@@ -100,7 +95,7 @@ def _rows_to_serialisable(dataset_split) -> list[dict]:
 def _download_dataset(
     dataset_id: str,
     config_name: str | None,
-) -> "DatasetDict":
+) -> Any:
     """Download a dataset with automatic retries on network errors."""
     from datasets import load_dataset  # imported here to defer heavy load
 

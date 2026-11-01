@@ -1,420 +1,262 @@
-"""Integration tests that chain the real retrieval, prompt and parsing stages.
+"""Tests for src/pipeline.py and src/confidence/scorer.py.
 
-External services (vector store, embeddings, LLM) are mocked. The
-``LegalResearchPipeline`` class itself is covered in test_legal_pipeline.py.
+``TestLegalResearchPipeline`` mocks the retrieval stage to check how the
+pipeline assembles sources, prompts and results. ``TestEndToEnd`` runs the
+real retrieval, prompt, parsing and scoring code with only the vector
+store, embedding model and LLM mocked.
 """
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-# Path bootstrap
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-
-from config.settings import CONFIDENCE_WEIGHTS
-from src.generation.prompt_builder import PromptBuilder
-from src.generation.response_parser import CitedResponse, ResponseParser
-from src.retrieval.hybrid_search import HybridSearch
-from src.retrieval.reranker import AuthorityReranker
+from src.confidence.scorer import ConfidenceScorer, confidence_level
+from src.generation.response_parser import CitedResponse, CitedSource
+from src.pipeline import LegalResearchPipeline
+from src.retrieval.ipc_bns import MAPPING_CHUNK_ID, IpcBnsMapper
+from src.retrieval.retrieval_pipeline import RetrievalPipeline
 
 
-# Pipeline helper
-
-def run_pipeline(
-    query: str,
-    vectorstore: Any,
-    embedding_service: Any,
-    llm_generate: Any,
-    top_k: int = 6,
-) -> dict[str, Any]:
-    """Execute the full retrieval-generation pipeline.
-
-    This function mimics what a ``pipeline.py`` module would do:
-    1. Hybrid search
-    2. Re-rank
-    3. Build prompt
-    4. Generate response (via LLM)
-    5. Parse citations
-    6. Compute confidence
-    """
-    # Stage 1: retrieval
-    hybrid = HybridSearch(vectorstore, embedding_service)
-    raw_results = hybrid.search(query, top_k=20)
-
-    # Stage 2: re-rank
-    reranker = AuthorityReranker()
-    reranked = reranker.rerank(raw_results, top_k=top_k)
-
-    # Stage 3: build prompt
-    builder = PromptBuilder()
-    sys_prompt, user_prompt = builder.build_prompt(query, reranked)
-
-    # Stage 4: generate
-    raw_response = llm_generate(user_prompt, system_prompt=sys_prompt)
-
-    # Stage 5: parse
-    parser = ResponseParser()
-    cited_response = parser.parse_response(raw_response, reranked)
-
-    # Stage 6: confidence scoring
-    confidence = _compute_confidence(cited_response, reranked)
-
+def _chunk(chunk_id: str, text: str, **metadata: Any) -> dict[str, Any]:
     return {
-        "query": query,
-        "cited_response": cited_response,
-        "reranked_chunks": reranked,
-        "confidence": confidence,
-        "raw_response": raw_response,
+        "chunk_id": chunk_id,
+        "text": text,
+        "metadata": metadata,
+        "semantic_score": 0.8,
+        "rrf_score": 0.01,
+        "authority_score": 1.0,
+        "final_score": 0.75,
     }
 
 
-def _compute_confidence(
-    cited_response: CitedResponse,
-    reranked: list[dict[str, Any]],
-) -> float:
-    """Compute an aggregate confidence score in [0, 1].
+RETRIEVED = [
+    _chunk(
+        "ipc::302",
+        "Section 302. Punishment for murder. Whoever commits murder shall be "
+        "punished with death, or imprisonment for life, and shall also be liable to fine.",
+        doc_type="statute",
+        act_name="Indian Penal Code, 1860",
+        section_number="302",
+    ),
+    _chunk(
+        "sc::1",
+        "The conviction under Section 302 IPC was upheld by this Court.",
+        doc_type="judgement",
+        case_name="State of Maharashtra v. Prakash",
+        court="Supreme Court of India",
+    ),
+]
 
-    Weights are drawn from ``config.settings.CONFIDENCE_WEIGHTS``:
-    - retrieval_quality:  mean of final_scores from reranked chunks
-    - source_agreement:   fraction of sources that were cited
-    - authority_strength: mean authority_score of cited sources
-    - coverage_score:     1.0 if any citations exist, else 0.0
-    """
-    if not reranked:
-        return 0.0
 
-    retrieval_quality = sum(
-        r.get("final_score", 0.0) for r in reranked
-    ) / len(reranked)
-
-    total_sources = len(reranked)
-    cited_count = cited_response.citation_count
-    source_agreement = cited_count / total_sources if total_sources else 0.0
-
-    authority_scores = [
-        r.get("authority_score", 0.0) for r in reranked
-        if r.get("chunk_id") in {cs.chunk_id for cs in cited_response.cited_sources}
-    ]
-    authority_strength = (
-        sum(authority_scores) / len(authority_scores) if authority_scores else 0.0
+def _build(
+    retrieved: list[dict],
+    answer: str,
+    mapper: Any = "default",
+) -> tuple[LegalResearchPipeline, MagicMock, MagicMock]:
+    retrieval = MagicMock()
+    retrieval.retrieve.return_value = retrieved
+    llm = MagicMock()
+    llm.generate.return_value = answer
+    pipeline = LegalResearchPipeline(
+        retrieval,
+        llm,
+        IpcBnsMapper() if mapper == "default" else mapper,
     )
-
-    coverage = 1.0 if cited_count > 0 else 0.0
-
-    score = (
-        CONFIDENCE_WEIGHTS["retrieval_quality"] * retrieval_quality
-        + CONFIDENCE_WEIGHTS["source_agreement"] * source_agreement
-        + CONFIDENCE_WEIGHTS["authority_strength"] * authority_strength
-        + CONFIDENCE_WEIGHTS["coverage_score"] * coverage
-    )
-    return round(min(max(score, 0.0), 1.0), 4)
+    return pipeline, retrieval, llm
 
 
-# Fixtures
+class TestLegalResearchPipeline:
 
-def _make_rich_vectorstore() -> MagicMock:
-    """Build a vectorstore mock with realistic legal chunks."""
-    store = MagicMock()
-    store.query.return_value = {
-        "ids": [["c1", "c2", "c3", "c4"]],
-        "documents": [[
-            "Section 302 IPC: Whoever commits murder shall be punished with death or life imprisonment.",
-            "In State of Maharashtra v. Prakash, the conviction under Section 302 was upheld by the Supreme Court.",
-            "Article 21 of the Constitution guarantees right to life and personal liberty.",
-            "The doctrine of basic structure was established in Kesavananda Bharati v State of Kerala.",
-        ]],
-        "metadatas": [[
-            {"doc_type": "statute", "section_number": "302", "act_name": "IPC"},
-            {"doc_type": "judgement", "court": "Supreme Court of India", "case_name": "State of Maharashtra v. Prakash", "date": "2020-03-15"},
-            {"doc_type": "constitution", "section_number": "21"},
-            {"doc_type": "judgement", "court": "Supreme Court of India", "case_name": "Kesavananda Bharati v State of Kerala", "date": "1973-04-24"},
-        ]],
-        "distances": [[0.1, 0.2, 0.4, 0.5]],
-    }
-    store.get.return_value = {
-        "ids": ["c1", "c2"],
-        "documents": [
-            "Section 302 IPC: Whoever commits murder shall be punished with death or life imprisonment.",
-            "In State of Maharashtra v. Prakash, the conviction under Section 302 was upheld.",
-        ],
-        "metadatas": [
-            {"doc_type": "statute", "section_number": "302", "act_name": "IPC"},
-            {"doc_type": "judgement", "court": "Supreme Court of India"},
-        ],
-    }
-    return store
+    def test_empty_query(self) -> None:
+        pipeline, retrieval, _ = _build(RETRIEVED, "")
+        result = pipeline.query("   ")
+        assert result.error == "Query must not be empty."
+        retrieval.retrieve.assert_not_called()
 
-
-@pytest.fixture()
-def rich_vectorstore() -> MagicMock:
-    return _make_rich_vectorstore()
-
-
-@pytest.fixture()
-def empty_vectorstore() -> MagicMock:
-    store = MagicMock()
-    store.query.return_value = {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
-    store.get.return_value = {"ids": [], "documents": [], "metadatas": []}
-    return store
-
-
-@pytest.fixture()
-def mock_llm() -> MagicMock:
-    def fake_generate(prompt: str, system_prompt: str | None = None) -> str:
-        return (
-            "According to [SOURCE_1], Section 302 of IPC provides punishment "
-            "for murder which is death or life imprisonment. "
-            "The Supreme Court in [SOURCE_2] upheld the conviction. "
-            "Article 21 [SOURCE_3] protects the right to life."
+    def test_ipc_query_adds_mapping_source(self) -> None:
+        answer = (
+            "Murder is punished under Section 302 IPC [SOURCE_1], which now "
+            "corresponds to Section 103 BNS [SOURCE_3]. [SOURCE_2]"
         )
-    return MagicMock(side_effect=fake_generate)
+        pipeline, retrieval, llm = _build(RETRIEVED, answer)
+        result = pipeline.query("What is Section 302 IPC and its BNS equivalent?")
+
+        assert result.error is None
+        # Retrieval ran on the expanded query
+        sent_query = retrieval.retrieve.call_args.args[0]
+        assert "Section 103 BNS" in sent_query
+        # The mapping table is the last numbered source in the prompt
+        user_prompt = llm.generate.call_args.args[0]
+        assert "[SOURCE_3]" in user_prompt
+        assert "BNS Section 103" in user_prompt
+        assert result.sources[-1]["chunk_id"] == MAPPING_CHUNK_ID
+        assert [m["ipc_section"] for m in result.ipc_bns_mappings] == ["302"]
+        assert result.retrieved_count == 2
+        assert len(result.cited_sources) == 3
+
+    def test_metadata_reaches_prompt(self) -> None:
+        pipeline, _, llm = _build(RETRIEVED, "Answer [SOURCE_1].")
+        pipeline.query("What is the punishment for murder?")
+        user_prompt = llm.generate.call_args.args[0]
+        assert "Act: Indian Penal Code, 1860 | Section: 302" in user_prompt
+        assert "Case: State of Maharashtra v. Prakash" in user_prompt
+
+    def test_no_mapping_for_constitutional_query(self) -> None:
+        pipeline, retrieval, _ = _build(RETRIEVED, "Answer [SOURCE_1].")
+        result = pipeline.query("What does Article 21 guarantee?")
+        assert result.ipc_bns_mappings == []
+        assert retrieval.retrieve.call_args.args[0] == "What does Article 21 guarantee?"
+        assert all(c["chunk_id"] != MAPPING_CHUNK_ID for c in result.sources)
+
+    def test_nothing_retrieved(self) -> None:
+        pipeline, _, llm = _build([], "unused")
+        result = pipeline.query("What does Article 21 guarantee?")
+        assert result.error == "No relevant documents found for the query."
+        llm.generate.assert_not_called()
+
+    def test_mapping_alone_is_enough_to_answer(self) -> None:
+        pipeline, _, _ = _build([], "Section 302 IPC is now Section 103 BNS [SOURCE_1].")
+        result = pipeline.query("Section 302 IPC in BNS?")
+        assert result.error is None
+        assert len(result.cited_sources) == 1
+
+    def test_retrieval_failure_is_reported(self) -> None:
+        pipeline, retrieval, llm = _build(RETRIEVED, "unused")
+        retrieval.retrieve.side_effect = RuntimeError("Connection refused")
+        result = pipeline.query("What is Section 302 IPC?")
+        assert result.error == "Retrieval failed: Connection refused"
+        llm.generate.assert_not_called()
+
+    def test_generation_failure_keeps_sources(self) -> None:
+        pipeline, _, llm = _build(RETRIEVED, "")
+        llm.generate.side_effect = RuntimeError("endpoint down")
+        result = pipeline.query("What is Section 302 IPC?")
+        assert result.error == "Generation failed: endpoint down"
+        assert result.retrieved_count == 2
+        assert len(result.sources) == 3
+
+    def test_works_without_mapper(self) -> None:
+        pipeline, _, _ = _build(RETRIEVED, "Answer [SOURCE_1].", mapper=None)
+        result = pipeline.query("What is Section 302 IPC?")
+        assert result.error is None
+        assert result.ipc_bns_mappings == []
+
+    def test_invalid_citations_are_reported(self) -> None:
+        pipeline, _, _ = _build(RETRIEVED, "Answer [SOURCE_1] [SOURCE_9].", mapper=None)
+        result = pipeline.query("What is the punishment for murder?")
+        assert result.invalid_citations == ["[SOURCE_9]"]
+
+    def test_confidence_uses_retrieved_chunks_only(self) -> None:
+        pipeline, _, _ = _build(RETRIEVED, "A [SOURCE_1] B [SOURCE_2] C [SOURCE_3].")
+        result = pipeline.query("What is Section 302 IPC?")
+        assert result.confidence is not None
+        # both retrieved chunks were cited
+        assert result.confidence.breakdown["coverage_score"] == pytest.approx(1.0)
+
+    def test_without_llm_returns_sources(self) -> None:
+        retrieval = MagicMock()
+        retrieval.retrieve.return_value = RETRIEVED
+        pipeline = LegalResearchPipeline(retrieval, None, IpcBnsMapper())
+        assert not pipeline.can_generate
+        result = pipeline.query("What is Section 302 IPC?")
+        assert "NVIDIA_API_KEY" in result.error
+        assert result.answer_text == ""
+        assert len(result.sources) == 3  # two passages + IPC/BNS table
 
 
-# Tests: full pipeline flow
+class TestEndToEnd:
 
-class TestFullPipelineFlow:
+    @pytest.fixture()
+    def collection(self) -> MagicMock:
+        """A ChromaDB collection mock with realistic legal chunks."""
+        store = MagicMock()
+        store.query.return_value = {
+            "ids": [["c1", "c2", "c3"]],
+            "documents": [[
+                "Section 302 IPC: Whoever commits murder shall be punished with death or life imprisonment.",
+                "In State of Maharashtra v. Prakash, the conviction under Section 302 was upheld.",
+                "Article 21 of the Constitution guarantees right to life and personal liberty.",
+            ]],
+            "metadatas": [[
+                {"doc_type": "statute", "section_number": "302", "act_name": "IPC"},
+                {"doc_type": "judgement", "court": "Supreme Court of India", "date": "2020-03-15"},
+                {"doc_type": "constitution", "section_number": "21"},
+            ]],
+            "distances": [[0.1, 0.2, 0.4]],
+        }
+        return store
 
-    def test_pipeline_returns_expected_keys(
+    def test_answer_with_citations_and_confidence(
         self,
-        rich_vectorstore: MagicMock,
+        collection: MagicMock,
         mock_embedding_service: MagicMock,
-        mock_llm: MagicMock,
     ) -> None:
-        result = run_pipeline(
-            "What is Section 302 IPC?",
-            rich_vectorstore,
-            mock_embedding_service,
-            mock_llm,
+        llm = MagicMock()
+        llm.generate.return_value = (
+            "Section 302 punishes murder [SOURCE_1]. The Supreme Court upheld "
+            "a conviction under it [SOURCE_2]."
         )
-        assert "query" in result
-        assert "cited_response" in result
-        assert "reranked_chunks" in result
-        assert "confidence" in result
-        assert "raw_response" in result
+        pipeline = LegalResearchPipeline(
+            RetrievalPipeline(collection, mock_embedding_service), llm, IpcBnsMapper()
+        )
+        result = pipeline.query("What is Section 302 IPC?")
 
-    def test_pipeline_produces_citations(
-        self,
-        rich_vectorstore: MagicMock,
-        mock_embedding_service: MagicMock,
-        mock_llm: MagicMock,
-    ) -> None:
-        result = run_pipeline(
-            "What is Section 302 IPC?",
-            rich_vectorstore,
-            mock_embedding_service,
-            mock_llm,
-        )
-        cited = result["cited_response"]
-        assert isinstance(cited, CitedResponse)
-        assert cited.citation_count > 0
-
-    def test_pipeline_cited_response_has_html(
-        self,
-        rich_vectorstore: MagicMock,
-        mock_embedding_service: MagicMock,
-        mock_llm: MagicMock,
-    ) -> None:
-        result = run_pipeline(
-            "What is Section 302 IPC?",
-            rich_vectorstore,
-            mock_embedding_service,
-            mock_llm,
-        )
-        assert "citation-badge" in result["cited_response"].answer_html
-
-    def test_pipeline_reranked_sorted(
-        self,
-        rich_vectorstore: MagicMock,
-        mock_embedding_service: MagicMock,
-        mock_llm: MagicMock,
-    ) -> None:
-        result = run_pipeline(
-            "What is Section 302 IPC?",
-            rich_vectorstore,
-            mock_embedding_service,
-            mock_llm,
-        )
-        scores = [r["final_score"] for r in result["reranked_chunks"]]
+        assert result.error is None
+        assert result.retrieved_count == 3
+        scores = [c["final_score"] for c in result.sources[:3]]
         assert scores == sorted(scores, reverse=True)
+        assert result.sources[-1]["chunk_id"] == MAPPING_CHUNK_ID
+        assert {s.source_index for s in result.cited_sources} == {1, 2}
+        assert result.confidence is not None
+        assert 0.0 < result.confidence.overall_score <= 1.0
+
+    def test_embedding_failure_is_reported(self, collection: MagicMock) -> None:
+        embedder = MagicMock()
+        embedder.embed_query.side_effect = RuntimeError("Model load failed")
+        pipeline = LegalResearchPipeline(RetrievalPipeline(collection, embedder), MagicMock())
+        result = pipeline.query("What is Section 302 IPC?")
+        assert result.error == "Retrieval failed: Model load failed"
 
 
-# Tests: pipeline with empty vectorstore
+class TestConfidenceScorer:
 
-class TestPipelineEmptyVectorstore:
-
-    def test_empty_results_zero_confidence(
-        self,
-        empty_vectorstore: MagicMock,
-        mock_embedding_service: MagicMock,
-    ) -> None:
-        def no_sources_response(prompt: str, system_prompt: str | None = None) -> str:
-            return "The provided sources do not contain sufficient information."
-
-        result = run_pipeline(
-            "What is Section 99999 IPC?",
-            empty_vectorstore,
-            mock_embedding_service,
-            MagicMock(side_effect=no_sources_response),
-        )
-        assert result["confidence"] == 0.0
-        assert result["cited_response"].citation_count == 0
-
-    def test_empty_reranked_list(
-        self,
-        empty_vectorstore: MagicMock,
-        mock_embedding_service: MagicMock,
-    ) -> None:
-        result = run_pipeline(
-            "test",
-            empty_vectorstore,
-            mock_embedding_service,
-            MagicMock(return_value="No info"),
-        )
-        assert result["reranked_chunks"] == []
-
-
-# Tests: confidence scoring
-
-class TestConfidenceScoring:
-
-    def test_confidence_between_zero_and_one(
-        self,
-        rich_vectorstore: MagicMock,
-        mock_embedding_service: MagicMock,
-        mock_llm: MagicMock,
-    ) -> None:
-        result = run_pipeline(
-            "What is Section 302 IPC?",
-            rich_vectorstore,
-            mock_embedding_service,
-            mock_llm,
-        )
-        assert 0.0 <= result["confidence"] <= 1.0
-
-    def test_higher_citation_coverage_means_higher_confidence(
-        self,
-        rich_vectorstore: MagicMock,
-        mock_embedding_service: MagicMock,
-    ) -> None:
-        def all_cited(prompt: str, system_prompt: str | None = None) -> str:
-            return "[SOURCE_1] [SOURCE_2] [SOURCE_3] [SOURCE_4]"
-
-        def few_cited(prompt: str, system_prompt: str | None = None) -> str:
-            return "[SOURCE_1] only."
-
-        result_all = run_pipeline(
-            "Section 302 IPC?",
-            rich_vectorstore,
-            mock_embedding_service,
-            MagicMock(side_effect=all_cited),
-        )
-        # Rebuild the vectorstore mock so it has fresh call counts
-        result_few = run_pipeline(
-            "Section 302 IPC?",
-            _make_rich_vectorstore(),
-            mock_embedding_service,
-            MagicMock(side_effect=few_cited),
-        )
-        assert result_all["confidence"] >= result_few["confidence"]
-
-    def test_confidence_zero_for_empty_results(self) -> None:
-        resp = CitedResponse(answer_text="no data", answer_html="no data")
-        score = _compute_confidence(resp, [])
-        assert score == 0.0
-
-    def test_confidence_with_authority(self) -> None:
-        from src.generation.response_parser import CitedSource
-
-        resp = CitedResponse(
-            answer_text="[SOURCE_1]",
-            answer_html="[SOURCE_1]",
+    @staticmethod
+    def _cited(*chunk_ids: str) -> CitedResponse:
+        return CitedResponse(
+            answer_text="",
             cited_sources=[
-                CitedSource(
-                    source_index=1,
-                    chunk_id="c1",
-                    text="Section 302 IPC",
-                    metadata={"doc_type": "statute"},
-                ),
+                CitedSource(source_index=i, chunk_id=cid, text="", metadata={})
+                for i, cid in enumerate(chunk_ids, start=1)
             ],
-            citation_count=1,
         )
-        reranked = [
-            {
-                "chunk_id": "c1",
-                "final_score": 0.8,
-                "authority_score": 1.0,
-            },
+
+    def test_no_chunks_scores_zero(self) -> None:
+        result = ConfidenceScorer().score([], self._cited())
+        assert result.overall_score == 0.0
+        assert result.level == "Very Low"
+
+    def test_more_citations_score_higher(self) -> None:
+        scorer = ConfidenceScorer()
+        all_cited = scorer.score(RETRIEVED, self._cited("ipc::302", "sc::1"))
+        one_cited = scorer.score(RETRIEVED, self._cited("ipc::302"))
+        assert all_cited.overall_score > one_cited.overall_score
+        assert all_cited.breakdown["coverage_score"] == 1.0
+        assert one_cited.breakdown["coverage_score"] == 0.5
+
+    def test_authority_uses_cited_chunks(self) -> None:
+        chunks = [
+            {**RETRIEVED[0], "authority_score": 1.0},
+            {**RETRIEVED[1], "authority_score": 0.2},
         ]
-        score = _compute_confidence(resp, reranked)
-        assert 0.0 < score <= 1.0
+        result = ConfidenceScorer().score(chunks, self._cited("sc::1"))
+        assert result.breakdown["authority_strength"] == pytest.approx(0.2)
 
-
-# Tests: error handling at each stage
-
-class TestPipelineErrorHandling:
-
-    def test_embedding_service_failure(
-        self,
-        rich_vectorstore: MagicMock,
-    ) -> None:
-        bad_embedder = MagicMock()
-        bad_embedder.embed_query.side_effect = RuntimeError("Model load failed")
-
-        with pytest.raises(RuntimeError, match="Model load failed"):
-            run_pipeline(
-                "test",
-                rich_vectorstore,
-                bad_embedder,
-                MagicMock(return_value="ok"),
-            )
-
-    def test_vectorstore_query_failure(
-        self,
-        mock_embedding_service: MagicMock,
-    ) -> None:
-        bad_store = MagicMock()
-        bad_store.query.side_effect = RuntimeError("Connection refused")
-
-        with pytest.raises(RuntimeError, match="Connection refused"):
-            run_pipeline(
-                "test",
-                bad_store,
-                mock_embedding_service,
-                MagicMock(return_value="ok"),
-            )
-
-    def test_llm_failure(
-        self,
-        rich_vectorstore: MagicMock,
-        mock_embedding_service: MagicMock,
-    ) -> None:
-        bad_llm = MagicMock(
-            side_effect=RuntimeError("LLM API unavailable")
-        )
-        with pytest.raises(RuntimeError, match="LLM API unavailable"):
-            run_pipeline(
-                "What is Section 302 IPC?",
-                rich_vectorstore,
-                mock_embedding_service,
-                bad_llm,
-            )
-
-    def test_prompt_builder_empty_query(
-        self,
-        rich_vectorstore: MagicMock,
-        mock_embedding_service: MagicMock,
-    ) -> None:
-        with pytest.raises(ValueError, match="Query must not be empty"):
-            run_pipeline(
-                "",
-                rich_vectorstore,
-                mock_embedding_service,
-                MagicMock(return_value="ok"),
-            )
+    @pytest.mark.parametrize(
+        ("score", "level"),
+        [(0.95, "High"), (0.8, "High"), (0.6, "Medium"), (0.45, "Low"), (0.1, "Very Low")],
+    )
+    def test_levels(self, score: float, level: str) -> None:
+        assert confidence_level(score) == level

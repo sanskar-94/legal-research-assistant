@@ -1,8 +1,9 @@
 """Client for the answer-generation LLM.
 
 Talks to any OpenAI-compatible chat endpoint. The project default is
-DeepSeek V3.2 on NVIDIA NIM (see ``config.settings``). Requests are rate
-limited with a sliding window and retried with exponential backoff.
+DeepSeek V3.2 on NVIDIA NIM (see ``config.settings``); a local llama.cpp
+server (``scripts/local_llm.sh``) works too and needs no API key. Requests
+are rate limited with a sliding window and retried with exponential backoff.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ import time
 from threading import Lock
 from typing import Optional
 
-from dotenv import load_dotenv
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -22,6 +22,7 @@ from tenacity import (
     wait_exponential,
 )
 
+# Importing settings also loads .env, which provides the API key.
 from config.settings import (
     LLM_BASE_URL,
     LLM_MAX_TOKENS,
@@ -30,10 +31,12 @@ from config.settings import (
     LLM_TEMPERATURE,
 )
 
-load_dotenv()
-
 # Checked in order when no key is passed explicitly.
 _API_KEY_ENV_VARS = ("NVIDIA_API_KEY", "LLM_API_KEY")
+
+# Local servers ignore the key, but the OpenAI client requires one.
+_LOCAL_HOST_PATTERN = re.compile(r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?(?:/|$)")
+_LOCAL_PLACEHOLDER_KEY = "local"
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +101,8 @@ class LLMClient:
 
     Args:
         api_key:  API key. Falls back to ``NVIDIA_API_KEY`` then
-                  ``LLM_API_KEY`` from the environment when *None*.
+                  ``LLM_API_KEY`` from the environment when *None*. Not
+                  needed when ``LLM_BASE_URL`` points at localhost.
         model:    Model identifier. Defaults to ``config.settings.LLM_MODEL``.
     """
 
@@ -111,6 +115,8 @@ class LLMClient:
             (os.getenv(name) for name in _API_KEY_ENV_VARS if os.getenv(name)),
             None,
         )
+        if not resolved_key and _LOCAL_HOST_PATTERN.match(LLM_BASE_URL):
+            resolved_key = _LOCAL_PLACEHOLDER_KEY
         if not resolved_key:
             raise LLMClientError(
                 "No API key provided. Set NVIDIA_API_KEY in .env "
@@ -157,13 +163,9 @@ class LLMClient:
         if not prompt:
             raise LLMClientError("Prompt must not be empty.")
 
-        self._wait_for_rate_limit()
         return self._call_api(prompt, system_prompt)
 
     # Internal helpers
-
-    def _wait_for_rate_limit(self) -> None:
-        self._rate_limiter.wait_if_needed()
 
     @retry(
         retry=retry_if_exception_type(Exception),
@@ -176,15 +178,16 @@ class LLMClient:
         prompt: str,
         system_prompt: Optional[str],
     ) -> str:
-        """Execute the LLM API call with retries."""
+        """Execute one LLM API call. Every attempt, retries included, counts
+        towards the rate limit."""
+        self._rate_limiter.wait_if_needed()
+
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
         try:
-            messages: list[dict[str, str]] = []
-
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-
-            messages.append({"role": "user", "content": prompt})
-
             completion = self._client.chat.completions.create(
                 model=self._model_name,
                 messages=messages,
@@ -192,24 +195,27 @@ class LLMClient:
                 max_tokens=LLM_MAX_TOKENS,
                 top_p=0.95,
             )
-
-            response_text = completion.choices[0].message.content
-
-            if not response_text:
-                raise LLMClientError("LLM returned an empty response.")
-
-            response_text = _strip_model_thinking(response_text)
-            if not response_text:
-                raise LLMClientError("LLM returned only hidden reasoning.")
-
-            logger.debug("LLM response received - %d characters.", len(response_text))
-            return response_text
-
-        except LLMClientError:
-            raise
         except Exception as exc:
-            logger.warning("LLM API call failed (will retry): %s", exc)
+            from openai import APIConnectionError
+
+            logger.warning("LLM API call failed: %s", exc)
+            if isinstance(exc, APIConnectionError) and _LOCAL_HOST_PATTERN.match(LLM_BASE_URL):
+                raise LLMClientError(
+                    f"Cannot reach the local model at {LLM_BASE_URL}. "
+                    "Start it with: scripts/local_llm.sh start"
+                ) from exc
             raise
+
+        response_text = completion.choices[0].message.content
+        if not response_text:
+            raise LLMClientError("LLM returned an empty response.")
+
+        response_text = _strip_model_thinking(response_text)
+        if not response_text:
+            raise LLMClientError("LLM returned only hidden reasoning.")
+
+        logger.debug("LLM response received - %d characters.", len(response_text))
+        return response_text
 
 
 def _strip_model_thinking(text: str) -> str:

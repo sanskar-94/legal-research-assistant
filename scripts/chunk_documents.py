@@ -30,8 +30,7 @@ _PROJECT_ROOT = _SCRIPT_DIR.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import CHUNKS_DIR, PROCESSED_DIR  # noqa: E402
-from src.chunking.chunk_models import Chunk  # noqa: E402
-from src.chunking.legal_chunker import chunk_document  # noqa: E402
+from src.chunking.legal_chunker import chunk_document, estimate_tokens  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -41,14 +40,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger("chunk_documents")
-
-# Token estimation (mirrors legal_chunker)
-_WORDS_TO_TOKENS_FACTOR = 1.3
-
-
-def _estimate_tokens(text: str) -> int:
-    return int(len(text.split()) * _WORDS_TO_TOKENS_FACTOR)
-
 
 # Statute slugs written by download_statutes.py
 _ACT_NAMES: dict[str, str] = {
@@ -135,11 +126,6 @@ def _load_documents(source_dir: Path) -> list[dict]:
     return documents
 
 
-def _serialize_chunks(chunks: list[Chunk]) -> list[dict]:
-    """Convert a list of Chunk models to plain dicts for JSON output."""
-    return [chunk.model_dump() for chunk in chunks]
-
-
 def _save_chunks(chunks: list[dict], output_path: Path) -> None:
     """Write serialised chunks to a JSON file."""
     with output_path.open("w", encoding="utf-8") as fh:
@@ -200,15 +186,14 @@ def main() -> None:
             doc_failure += 1
             continue
 
-        serialised = _serialize_chunks(chunks)
-        all_chunks.extend(serialised)
+        all_chunks.extend(chunk.model_dump() for chunk in chunks)
 
-        chunk_tokens = sum(_estimate_tokens(c.text) for c in chunks)
+        chunk_tokens = sum(estimate_tokens(c.text) for c in chunks)
         total_chunks += len(chunks)
         total_tokens += chunk_tokens
         doc_success += 1
 
-        logger.info(
+        logger.debug(
             "  %s (%s): %d chunks, ~%d tokens",
             doc_id,
             doc_type,

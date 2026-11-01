@@ -1,4 +1,4 @@
-"""Answer-quality metrics shared by the evaluation script and the UI.
+"""Answer-quality metrics used by the evaluation script.
 
 Citation validity only checks whether ``[SOURCE_N]`` tags point to provided
 source chunks. Citation support is a conservative local proxy for whether the
@@ -11,7 +11,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-SOURCE_REF_PATTERN: re.Pattern[str] = re.compile(r"\[SOURCE_(\d+)\]")
+from src.generation.response_parser import SOURCE_REF_PATTERN
+
 SENTENCE_SPLIT_PATTERN: re.Pattern[str] = re.compile(r"(?<=[.!?])\s+")
 LEGAL_ANCHOR_PATTERN: re.Pattern[str] = re.compile(
     r"\b(?:section|sec\.?|article|act|ipc|crpc|bns|constitution|court|"
@@ -28,32 +29,10 @@ LEGAL_CONCEPT_PATTERN: re.Pattern[str] = re.compile(
     r"imprisonment|fine|liability|offence|offense)\b",
     re.IGNORECASE,
 )
+# Tokens of two letters or fewer are dropped before this set is consulted.
 STOPWORDS: set[str] = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "has",
-    "have",
-    "in",
-    "is",
-    "it",
-    "its",
-    "of",
-    "on",
-    "or",
-    "that",
-    "the",
-    "this",
-    "to",
-    "under",
-    "with",
+    "and", "are", "for", "from", "has", "have", "its",
+    "that", "the", "this", "under", "with",
 }
 
 

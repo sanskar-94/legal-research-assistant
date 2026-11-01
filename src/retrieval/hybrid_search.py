@@ -5,13 +5,31 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict
-from typing import Any, Sequence
-
-import numpy as np
+from typing import Any
 
 from config.settings import RRF_K, SEMANTIC_TOP_K
 
 logger = logging.getLogger(__name__)
+
+# A party name: capitalised words, optionally joined by "of" / "and" / "&",
+# e.g. "Maneka Gandhi", "K.S. Puttaswamy", "State of Kerala".
+_PARTY = r"[A-Z][\w.'&-]*(?:\s+(?:(?:of|and|&)\s+)?[A-Z][\w.'&-]*)*"
+# "Maneka Gandhi v Union of India", "X vs. Y", "X versus Y"
+_CASE_NAME_PATTERN = re.compile(
+    rf"(?P<petitioner>{_PARTY})\s+(?:v|vs|versus)\.?\s+(?P<respondent>{_PARTY})"
+)
+# Capitalised words that start a question rather than a party name
+_LEADING_WORDS = frozenset({
+    "what", "explain", "summarize", "summarise", "describe", "discuss", "define",
+    "compare", "how", "why", "which", "who", "when", "where", "tell", "give", "list",
+    "is", "was", "in", "the",
+})
+# Parties that name no particular case, and statutes compared with "vs"
+_GENERIC_PARTY = re.compile(
+    r"^(?:the\s+)?(?:union|state|government|govt|commissioner|collector"
+    r"|ipc|bns|bnss|crpc|cpc|constitution)\b",
+    re.IGNORECASE,
+)
 
 # Query classification patterns
 _SECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -25,42 +43,64 @@ _SECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bBNS\b"),
 )
 
-_CASE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bv[.\s]\s", re.IGNORECASE),
-    re.compile(r"\bvs\.?\s", re.IGNORECASE),
+# A query naming a case (see ``_case_party_names``) is also a case lookup.
+_CITATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bAIR\s+\d{4}\b"),
     re.compile(r"\bSCC\s+\d+\b", re.IGNORECASE),
     re.compile(r"\(\d{4}\)\s+\d+\s+SCC\b"),
 )
 
-# Exact matches fetched per term before ranking by similarity. Common
-# identifiers such as "Section 302" occur in thousands of judgments, and
-# ChromaDB returns ``$contains`` matches in storage order, not by relevance.
-_KEYWORD_POOL_SIZE = 200
+# Nearest exact matches fetched per term spelling. ``$contains`` also
+# matches longer identifiers ("Article 14" in "Article 141"), which are
+# dropped afterwards, so this is well above the number finally kept.
+_KEYWORD_POOL_SIZE = 100
 
 # Weight presets per classification  (semantic_weight, keyword_weight)
 _CLASSIFICATION_WEIGHTS: dict[str, tuple[float, float]] = {
     "section_lookup": (0.3, 0.7),
-    "case_lookup": (0.4, 0.6),
+    "case_lookup": (0.2, 0.8),
     "conceptual": (0.8, 0.2),
     "mixed": (0.5, 0.5),
 }
+
+
+def _case_party_names(query: str) -> list[str]:
+    """Return the distinctive party names of any case named in *query*.
+
+    "What was held in Maneka Gandhi v Union of India?" gives
+    ``["Maneka Gandhi"]``: generic parties such as "Union of India" or
+    "State of Kerala" occur in thousands of judgments and are skipped.
+    """
+    names: list[str] = []
+    for match in _CASE_NAME_PATTERN.finditer(query):
+        for party in (match.group("petitioner"), match.group("respondent")):
+            words = party.split()
+            while words and words[0].lower() in _LEADING_WORDS:
+                words = words[1:]
+            name = " ".join(words).rstrip(".,'&-")
+            if not name or _GENERIC_PARTY.match(name):
+                continue
+            names.append(name)
+            # Judgments write initials with dots: "MC Mehta" -> "M.C. Mehta"
+            initials = re.match(r"([A-Z]{2,3})\s+(?=[A-Z])", name)
+            if initials:
+                dotted = "".join(f"{letter}." for letter in initials.group(1))
+                names.append(f"{dotted} {name[initials.end():]}")
+    return names
 
 
 def _extract_keyword_terms(query: str) -> list[str]:
     """Pull out specific legal identifiers for keyword matching.
 
     Returns a list of distinct search phrases extracted from the query,
-    such as section numbers, article numbers, act names, and case
-    citation fragments.
+    such as section numbers, article numbers, case party names, act
+    names, and case citation fragments.
     """
-    terms: list[str] = []
+    terms: list[str] = _case_party_names(query)
 
-    # Section / Article numbers  (e.g. "Section 302", "Article 21")
-    for match in re.finditer(r"(Section\s+\d+[A-Za-z]*)", query, re.IGNORECASE):
-        terms.append(match.group(0))
-    for match in re.finditer(r"(Article\s+\d+[A-Za-z]*)", query, re.IGNORECASE):
-        terms.append(match.group(0))
+    # Section / Article numbers, normalised to "Section 304A", "Article 21A"
+    for match in re.finditer(r"\b(Section|Article)\s+(\d+[A-Za-z]*)", query, re.IGNORECASE):
+        terms.append(f"{match.group(1).capitalize()} {match.group(2).upper()}")
 
     # AIR / SCC citations
     for match in re.finditer(r"(AIR\s+\d{4}\s+\w+\s+\d+)", query):
@@ -91,12 +131,12 @@ def _extract_keyword_terms(query: str) -> list[str]:
 def _case_variants(term: str) -> list[str]:
     """ChromaDB ``$contains`` is case-sensitive, so try the usual spellings.
 
-    Acronyms such as "IPC" are kept as typed only.
+    Judgments write both "Section 302" and "section 302"; party names,
+    citations and acronyms are searched as written.
     """
-    if term.isupper():
-        return [term]
-    variants = [term, term[:1].upper() + term[1:].lower(), term.lower()]
-    return list(dict.fromkeys(variants))
+    if term.startswith(("Section ", "Article ")):
+        return [term, term[:1].lower() + term[1:]]
+    return [term]
 
 
 def _whole_term_pattern(term: str) -> re.Pattern[str]:
@@ -104,11 +144,27 @@ def _whole_term_pattern(term: str) -> re.Pattern[str]:
     return re.compile(r"(?<![A-Za-z0-9])" + re.escape(term) + r"(?![A-Za-z0-9])", re.IGNORECASE)
 
 
-def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
-    va = np.asarray(a, dtype=float)
-    vb = np.asarray(b, dtype=float)
-    norm = float(np.linalg.norm(va) * np.linalg.norm(vb))
-    return float(va @ vb) / norm if norm else 0.0
+def _hits_from_query_result(results: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten a ChromaDB ``query`` response for one query embedding."""
+    if not results or not results.get("ids") or not results["ids"][0]:
+        return []
+
+    ids = results["ids"][0]
+    documents = (results.get("documents") or [[]])[0]
+    metadatas = (results.get("metadatas") or [[]])[0]
+    distances = (results.get("distances") or [[]])[0]
+
+    hits: list[dict[str, Any]] = []
+    for idx, chunk_id in enumerate(ids):
+        # The collection uses cosine space, so distance = 1 - cosine similarity.
+        distance = distances[idx] if idx < len(distances) else 1.0
+        hits.append({
+            "chunk_id": chunk_id,
+            "text": documents[idx] if idx < len(documents) else "",
+            "metadata": metadatas[idx] if idx < len(metadatas) else {},
+            "semantic_score": max(0.0, 1.0 - distance),
+        })
+    return hits
 
 
 def _reciprocal_rank_fusion(
@@ -156,7 +212,9 @@ class HybridSearch:
             ``"conceptual"``     | ``"mixed"``
         """
         has_section = any(p.search(query) for p in _SECTION_PATTERNS)
-        has_case = any(p.search(query) for p in _CASE_PATTERNS)
+        has_case = bool(_case_party_names(query)) or any(
+            p.search(query) for p in _CITATION_PATTERNS
+        )
 
         if has_section and has_case:
             return "mixed"
@@ -174,33 +232,11 @@ class HybridSearch:
         top_k: int,
     ) -> list[dict[str, Any]]:
         """Retrieve nearest neighbours of *query_embedding* from ChromaDB."""
-        results = self._vectorstore.query(
+        return _hits_from_query_result(self._vectorstore.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
             include=["documents", "metadatas", "distances"],
-        )
-
-        hits: list[dict[str, Any]] = []
-        if not results or not results.get("ids"):
-            return hits
-
-        ids = results["ids"][0]
-        documents = results.get("documents", [[]])[0]
-        metadatas = results.get("metadatas", [[]])[0]
-        distances = results.get("distances", [[]])[0]
-
-        for idx, chunk_id in enumerate(ids):
-            # The collection uses cosine space, so distance = 1 - cosine similarity.
-            distance = distances[idx] if idx < len(distances) else 1.0
-            semantic_score = max(0.0, 1.0 - distance)
-
-            hits.append({
-                "chunk_id": chunk_id,
-                "text": documents[idx] if idx < len(documents) else "",
-                "metadata": metadatas[idx] if idx < len(metadatas) else {},
-                "semantic_score": semantic_score,
-            })
-        return hits
+        ))
 
     # Keyword search
 
@@ -212,10 +248,12 @@ class HybridSearch:
     ) -> list[dict[str, Any]]:
         """Exact-match retrieval of legal identifiers via ``where_document``.
 
-        Only identifiers such as "Section 302", "Article 21" or an AIR/SCC
-        citation are searched; a conceptual query with none of these skips
-        the keyword path. Each hit is scored against the query embedding so
-        that keyword-only hits get a real semantic score for re-ranking.
+        Only identifiers such as "Section 302", "Article 21", a case party
+        name or an AIR/SCC citation are searched; a conceptual query with
+        none of these skips the keyword path. Among the chunks containing a
+        term, the ones nearest to the query embedding are taken, so common
+        identifiers that occur in thousands of judgments still return the
+        most relevant matches.
         """
         terms = _extract_keyword_terms(query)
         if not terms:
@@ -226,38 +264,19 @@ class HybridSearch:
             whole_term = _whole_term_pattern(term)
             for variant in _case_variants(term):
                 try:
-                    results = self._vectorstore.get(
+                    results = self._vectorstore.query(
+                        query_embeddings=[query_embedding],
                         where_document={"$contains": variant},
-                        include=["documents", "metadatas", "embeddings"],
-                        limit=max(top_k, _KEYWORD_POOL_SIZE),
+                        n_results=max(top_k, _KEYWORD_POOL_SIZE),
+                        include=["documents", "metadatas", "distances"],
                     )
                 except Exception:
                     logger.debug("Keyword search failed for '%s'", variant, exc_info=True)
                     continue
 
-                if not results or results.get("ids") is None or len(results["ids"]) == 0:
-                    continue
-
-                documents = results.get("documents")
-                metadatas = results.get("metadatas")
-                embeddings = results.get("embeddings")
-                for idx, chunk_id in enumerate(results["ids"]):
-                    if chunk_id in all_hits:
-                        continue
-                    text = documents[idx] if documents is not None and idx < len(documents) else ""
-                    if not whole_term.search(text):
-                        continue
-                    embedding = embeddings[idx] if embeddings is not None and idx < len(embeddings) else None
-                    all_hits[chunk_id] = {
-                        "chunk_id": chunk_id,
-                        "text": text,
-                        "metadata": metadatas[idx] if metadatas is not None and idx < len(metadatas) else {},
-                        "semantic_score": (
-                            max(0.0, _cosine_similarity(query_embedding, embedding))
-                            if embedding is not None
-                            else 0.0
-                        ),
-                    }
+                for hit in _hits_from_query_result(results):
+                    if hit["chunk_id"] not in all_hits and whole_term.search(hit["text"]):
+                        all_hits[hit["chunk_id"]] = hit
 
         hits = sorted(all_hits.values(), key=lambda h: h["semantic_score"], reverse=True)
         return hits[:top_k]

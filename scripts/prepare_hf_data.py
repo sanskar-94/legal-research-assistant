@@ -44,7 +44,7 @@ def _save_json(data: list[dict], path: Path) -> None:
     logger.info("  Saved %d records -> %s", len(data), path.name)
 
 
-def process_indian_legal(raw_dir: Path, processed_dir: Path) -> list[dict]:
+def process_indian_legal(raw_dir: Path) -> list[dict]:
     """Convert ninadn/indian-legal (full judgments with summaries)."""
     docs = []
     for split in ("train", "test"):
@@ -149,7 +149,7 @@ def process_legal_dataset_india(raw_dir: Path) -> list[dict]:
     return chunks
 
 
-def process_indian_law_dataset(raw_dir: Path, processed_dir: Path) -> list[dict]:
+def process_indian_law_dataset(raw_dir: Path) -> list[dict]:
     """Convert viber1/indian-law-dataset (QA pairs) into documents.
 
     Each instruction+response pair becomes a document about a legal topic.
@@ -186,7 +186,7 @@ def process_indian_law_dataset(raw_dir: Path, processed_dir: Path) -> list[dict]
     return docs
 
 
-def process_constitution_dataset(raw_dir: Path, processed_dir: Path) -> list[dict]:
+def process_constitution_dataset(raw_dir: Path) -> list[dict]:
     """Convert nisaar/Constitution_of_India (QA pairs about Constitution)."""
     path = raw_dir / "constitution_of_india_train.json"
     if not path.exists():
@@ -215,9 +215,9 @@ def main() -> None:
 
     # Documents that need chunking (save to data/processed/)
     all_docs: list[dict] = []
-    all_docs.extend(process_indian_legal(RAW_DIR, PROCESSED_DIR))
-    all_docs.extend(process_indian_law_dataset(RAW_DIR, PROCESSED_DIR))
-    all_docs.extend(process_constitution_dataset(RAW_DIR, PROCESSED_DIR))
+    all_docs.extend(process_indian_legal(RAW_DIR))
+    all_docs.extend(process_indian_law_dataset(RAW_DIR))
+    all_docs.extend(process_constitution_dataset(RAW_DIR))
 
     if all_docs:
         _save_json(all_docs, PROCESSED_DIR / "hf_documents.json")

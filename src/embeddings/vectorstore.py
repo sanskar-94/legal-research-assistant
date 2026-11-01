@@ -6,6 +6,7 @@ import logging
 from typing import Any, Optional
 
 from config.settings import CHROMA_COLLECTION_NAME, CHROMA_DIR
+from src.chunking.chunk_models import Chunk
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +24,16 @@ _METADATA_FIELDS: tuple[str, ...] = (
     "authority_score",
 )
 
+_COLLECTION_METADATA = {"hnsw:space": "cosine"}
+
 
 def _sanitise_metadata_value(value: Any) -> str | int | float | bool:
     """Convert a value to a ChromaDB-compatible scalar.
 
     ChromaDB metadata values must be str, int, float, or bool.
     - ``None`` is replaced with an empty string.
-    - Lists/dicts are serialised to a comma-separated string.
-    - Everything else is left as-is if already a valid type.
+    - Lists are serialised to a comma-separated string.
+    - Anything else is converted with ``str``.
     """
     if value is None:
         return ""
@@ -41,83 +44,54 @@ def _sanitise_metadata_value(value: Any) -> str | int | float | bool:
     return str(value)
 
 
-def _build_chroma_metadata(chunk) -> dict[str, str | int | float | bool]:
-    """Extract and sanitise metadata from a Chunk's ChunkMetadata model.
-
-    Returns a *new* dict - the original model is never mutated.
-    """
-    raw_meta = chunk.metadata
-    sanitised: dict[str, str | int | float | bool] = {}
-    for field_name in _METADATA_FIELDS:
-        raw_value = getattr(raw_meta, field_name, None)
-        sanitised[field_name] = _sanitise_metadata_value(raw_value)
-    return sanitised
+def _build_chroma_metadata(chunk: Chunk) -> dict[str, str | int | float | bool]:
+    """Extract and sanitise the stored metadata fields of *chunk*."""
+    return {
+        field_name: _sanitise_metadata_value(getattr(chunk.metadata, field_name, None))
+        for field_name in _METADATA_FIELDS
+    }
 
 
 class VectorStore:
-    """Manages a ChromaDB collection for legal document embeddings.
-
-    Provides semantic and keyword search with optional metadata filtering.
-    """
+    """Manages the persistent ChromaDB collection that holds the corpus."""
 
     def __init__(
         self,
         persist_dir: Optional[str] = None,
         collection_name: Optional[str] = None,
     ) -> None:
+        import chromadb
+
         resolved_dir = persist_dir or str(CHROMA_DIR)
-        resolved_name = collection_name or CHROMA_COLLECTION_NAME
+        self._collection_name = collection_name or CHROMA_COLLECTION_NAME
 
-        try:
-            import chromadb
+        logger.info("Opening ChromaDB at '%s' ...", resolved_dir)
+        self._client = chromadb.PersistentClient(path=resolved_dir)
+        self._collection = self._client.get_or_create_collection(
+            name=self._collection_name,
+            metadata=_COLLECTION_METADATA,
+        )
+        logger.info(
+            "ChromaDB collection '%s' ready (%d existing chunks).",
+            self._collection_name,
+            self._collection.count(),
+        )
 
-            logger.info(
-                "Initialising ChromaDB PersistentClient at '%s' ...", resolved_dir
-            )
-            self._client = chromadb.PersistentClient(path=resolved_dir)
-            self._collection = self._client.get_or_create_collection(
-                name=resolved_name,
-                metadata={"hnsw:space": "cosine"},
-            )
-            logger.info(
-                "ChromaDB collection '%s' ready (%d existing documents).",
-                resolved_name,
-                self._collection.count(),
-            )
-        except ImportError as exc:
-            logger.error(
-                "chromadb is not installed. Install it with: pip install chromadb"
-            )
-            raise ImportError(
-                "chromadb package is required for VectorStore"
-            ) from exc
-        except Exception as exc:
-            logger.error("Failed to initialise ChromaDB: %s", exc)
-            raise RuntimeError(
-                f"Could not initialise ChromaDB at '{resolved_dir}': {exc}"
-            ) from exc
+    @property
+    def collection(self) -> Any:
+        """The underlying ChromaDB collection, as used by ``HybridSearch``."""
+        return self._collection
 
-    # ------------------------------------------------------------------
-    # Write operations
-    # ------------------------------------------------------------------
+    def count(self) -> int:
+        """Return the number of chunks in the collection."""
+        return self._collection.count()
 
-    def add_chunks(
-        self,
-        chunks: list,
-        embeddings: list[list[float]],
-    ) -> None:
+    def add_chunks(self, chunks: list[Chunk], embeddings: list[list[float]]) -> None:
         """Upsert chunks with their embeddings and metadata.
 
-        Parameters
-        ----------
-        chunks:
-            Chunk pydantic model instances with ``.chunk_id``, ``.text``,
-            and ``.metadata`` attributes.
-        embeddings:
-            Pre-computed embedding vectors aligned 1-to-1 with *chunks*.
+        *embeddings* must be aligned 1-to-1 with *chunks*.
         """
         if not chunks:
-            logger.warning("add_chunks called with an empty list - nothing to upsert.")
             return
 
         if len(chunks) != len(embeddings):
@@ -125,176 +99,19 @@ class VectorStore:
                 f"Mismatch: {len(chunks)} chunks but {len(embeddings)} embeddings."
             )
 
-        ids = [chunk.chunk_id for chunk in chunks]
-        documents = [chunk.text for chunk in chunks]
-        metadatas = [_build_chroma_metadata(chunk) for chunk in chunks]
-
         self._collection.upsert(
-            ids=ids,
+            ids=[chunk.chunk_id for chunk in chunks],
             embeddings=embeddings,
-            documents=documents,
-            metadatas=metadatas,
+            documents=[chunk.text for chunk in chunks],
+            metadatas=[_build_chroma_metadata(chunk) for chunk in chunks],
         )
-        logger.info("Upserted %d chunks into the collection.", len(chunks))
+        logger.debug("Upserted %d chunks into the collection.", len(chunks))
 
-    # ------------------------------------------------------------------
-    # Read / search operations
-    # ------------------------------------------------------------------
-
-    def search_semantic(
-        self,
-        query_embedding: list[float],
-        top_k: int = 20,
-        filters: Optional[dict] = None,
-    ) -> list[dict]:
-        """Semantic (vector similarity) search.
-
-        Parameters
-        ----------
-        query_embedding:
-            The embedding vector of the user query.
-        top_k:
-            Maximum number of results.
-        filters:
-            Optional ChromaDB ``where`` clause dict for metadata filtering.
-
-        Returns
-        -------
-        list[dict]
-            Each dict contains ``id``, ``text``, ``metadata``, and ``score``
-            (cosine distance - lower is more similar).
-        """
-        query_kwargs: dict[str, Any] = {
-            "query_embeddings": [query_embedding],
-            "n_results": top_k,
-        }
-        if filters:
-            query_kwargs["where"] = filters
-
-        results = self._collection.query(**query_kwargs)
-        return self._format_results(results)
-
-    def search_keyword(
-        self,
-        query: str,
-        top_k: int = 20,
-        filters: Optional[dict] = None,
-    ) -> list[dict]:
-        """Keyword search using ChromaDB ``where_document`` contains filter.
-
-        Parameters
-        ----------
-        query:
-            Raw keyword/phrase to search for inside document text.
-        top_k:
-            Maximum number of results.
-        filters:
-            Optional ChromaDB ``where`` clause dict for metadata filtering.
-
-        Returns
-        -------
-        list[dict]
-            Each dict contains ``id``, ``text``, ``metadata``, and ``score``.
-        """
-        query_kwargs: dict[str, Any] = {
-            "where_document": {"$contains": query},
-            "n_results": top_k,
-        }
-        if filters:
-            query_kwargs["where"] = filters
-
-        results = self._collection.get(
-            where_document={"$contains": query},
-            where=filters if filters else None,
-            limit=top_k,
-            include=["documents", "metadatas"],
-        )
-        return self._format_get_results(results)
-
-    # ------------------------------------------------------------------
-    # Utility
-    # ------------------------------------------------------------------
-
-    def count(self) -> int:
-        """Return the number of documents in the collection."""
-        return self._collection.count()
-
-    def get_collection_stats(self) -> dict:
-        """Return collection count and a sample of metadata entries.
-
-        Returns
-        -------
-        dict
-            ``count`` - total documents, ``sample_metadata`` - up to 5
-            metadata dicts for quick inspection.
-        """
-        count = self._collection.count()
-        sample_metadata: list[dict] = []
-
-        if count > 0:
-            peek = self._collection.peek(limit=min(count, 5))
-            sample_metadata = peek.get("metadatas", [])
-
-        return {
-            "count": count,
-            "sample_metadata": sample_metadata,
-        }
-
-    def delete_collection(self) -> None:
-        """Delete all documents from the collection for a full rebuild."""
-        collection_name = self._collection.name
-        self._client.delete_collection(name=collection_name)
+    def reset(self) -> None:
+        """Delete every chunk by dropping and re-creating the collection."""
+        self._client.delete_collection(name=self._collection_name)
         self._collection = self._client.get_or_create_collection(
-            name=collection_name,
-            metadata={"hnsw:space": "cosine"},
+            name=self._collection_name,
+            metadata=_COLLECTION_METADATA,
         )
-        logger.info("Collection '%s' deleted and re-created.", collection_name)
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _format_results(results: dict) -> list[dict]:
-        """Convert a ChromaDB ``query`` response into a flat list of dicts."""
-        formatted: list[dict] = []
-        if not results or not results.get("ids"):
-            return formatted
-
-        ids = results["ids"][0]
-        documents = results["documents"][0] if results.get("documents") else [""] * len(ids)
-        metadatas = results["metadatas"][0] if results.get("metadatas") else [{}] * len(ids)
-        distances = results["distances"][0] if results.get("distances") else [0.0] * len(ids)
-
-        for doc_id, text, meta, dist in zip(ids, documents, metadatas, distances):
-            formatted.append(
-                {
-                    "id": doc_id,
-                    "text": text,
-                    "metadata": dict(meta) if meta else {},
-                    "score": dist,
-                }
-            )
-        return formatted
-
-    @staticmethod
-    def _format_get_results(results: dict) -> list[dict]:
-        """Convert a ChromaDB ``get`` response into a flat list of dicts."""
-        formatted: list[dict] = []
-        if not results or not results.get("ids"):
-            return formatted
-
-        ids = results["ids"]
-        documents = results.get("documents") or [""] * len(ids)
-        metadatas = results.get("metadatas") or [{}] * len(ids)
-
-        for doc_id, text, meta in zip(ids, documents, metadatas):
-            formatted.append(
-                {
-                    "id": doc_id,
-                    "text": text,
-                    "metadata": dict(meta) if meta else {},
-                    "score": 0.0,
-                }
-            )
-        return formatted
+        logger.info("Collection '%s' cleared.", self._collection_name)

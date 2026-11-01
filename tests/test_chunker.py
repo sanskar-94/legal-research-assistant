@@ -6,21 +6,13 @@ the router function ``chunk_document``, and edge cases.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-# Path bootstrap
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-
-from config.settings import CHUNK_MAX_TOKENS, CHUNK_OVERLAP_TOKENS, CHUNK_TARGET_TOKENS
+from config.settings import CHUNK_MAX_TOKENS
 from src.chunking.chunk_models import Chunk, ChunkMetadata
 from src.chunking.legal_chunker import (
-    _estimate_tokens,
     _merge_small_segments,
     _overlap_text,
     _split_long_text,
@@ -28,19 +20,9 @@ from src.chunking.legal_chunker import (
     chunk_document,
     chunk_judgement,
     chunk_statute,
+    estimate_tokens,
 )
 from tests.conftest import make_chunk_metadata
-
-
-# Helpers
-
-def _all_chunk_texts(chunks: list[Chunk]) -> list[str]:
-    """Extract just the text from a list of chunks."""
-    return [c.text for c in chunks]
-
-
-def _total_chunks(chunks: list[Chunk]) -> int:
-    return len(chunks)
 
 
 # Tests: internal helpers
@@ -58,11 +40,11 @@ class TestEstimateTokens:
     def test_estimate_tokens_range(
         self, text: str, expected_min: int, expected_max: int
     ) -> None:
-        tokens = _estimate_tokens(text)
+        tokens = estimate_tokens(text)
         assert expected_min <= tokens <= expected_max
 
     def test_estimate_tokens_returns_int(self) -> None:
-        assert isinstance(_estimate_tokens("hello world"), int)
+        assert isinstance(estimate_tokens("hello world"), int)
 
 
 class TestOverlapText:
@@ -115,7 +97,7 @@ class TestSplitLongText:
         pieces = _split_long_text(text, max_tokens=100, overlap_tokens=10)
         for piece in pieces:
             # Allow some tolerance since splitting is heuristic
-            assert _estimate_tokens(piece) < 200
+            assert estimate_tokens(piece) < 200
 
 
 # Tests: judgement chunking
@@ -139,7 +121,7 @@ class TestChunkJudgement:
         chunks = chunk_judgement(judgement_text, judgement_metadata)
         for chunk in chunks:
             # Allow generous tolerance for prefix + overlap
-            assert _estimate_tokens(chunk.text) < CHUNK_MAX_TOKENS * 2
+            assert estimate_tokens(chunk.text) < CHUNK_MAX_TOKENS * 2
 
     def test_chunk_indices_are_sequential(
         self, judgement_text: str, judgement_metadata: dict

@@ -73,6 +73,3 @@ logs/
 *.safetensors
 models/
 sentence-transformers/
-
-# Streamlit
-.streamlit/secrets.toml

@@ -18,14 +18,12 @@ from src.chunking.chunk_models import Chunk, ChunkMetadata
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
 # Token estimation
-# ---------------------------------------------------------------------------
 
 _WORDS_TO_TOKENS_FACTOR = 1.3
 
 
-def _estimate_tokens(text: str) -> int:
+def estimate_tokens(text: str) -> int:
     """Estimate token count using a simple word-count heuristic.
 
     Uses ``len(text.split()) * 1.3`` as an approximation.
@@ -33,9 +31,7 @@ def _estimate_tokens(text: str) -> int:
     return int(len(text.split()) * _WORDS_TO_TOKENS_FACTOR)
 
 
-# ---------------------------------------------------------------------------
 # Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _build_metadata(base: dict, *, chunk_index: int) -> ChunkMetadata:
@@ -71,7 +67,7 @@ def _merge_small_segments(
     buffer = segments[0]
 
     for segment in segments[1:]:
-        if _estimate_tokens(buffer) < min_tokens:
+        if estimate_tokens(buffer) < min_tokens:
             buffer = buffer.rstrip() + "\n" + segment
         else:
             merged.append(buffer)
@@ -92,7 +88,7 @@ def _split_long_text(
     Splitting is done on sentence boundaries when possible, falling back
     to word boundaries.
     """
-    if _estimate_tokens(text) <= max_tokens:
+    if estimate_tokens(text) <= max_tokens:
         return [text]
 
     sentences = re.split(r"(?<=[.!?])\s+", text)
@@ -101,7 +97,7 @@ def _split_long_text(
 
     for sentence in sentences:
         candidate = (current + " " + sentence).strip() if current else sentence
-        if _estimate_tokens(candidate) > max_tokens and current:
+        if estimate_tokens(candidate) > max_tokens and current:
             pieces.append(current)
             overlap = _overlap_text(current, overlap_tokens)
             current = (overlap + " " + sentence).strip()
@@ -114,9 +110,7 @@ def _split_long_text(
     return pieces
 
 
-# ---------------------------------------------------------------------------
 # Judgement chunking
-# ---------------------------------------------------------------------------
 
 _PARA_NUMBER_RE = re.compile(
     r"(?:^|\n)"           # start of text or newline
@@ -184,17 +178,15 @@ def chunk_judgement(text: str, metadata: dict) -> list[Chunk]:
         # Carry overlap into next iteration
         overlap_carry = _overlap_text(paragraph, CHUNK_OVERLAP_TOKENS)
 
-    logger.info(
+    logger.debug(
         "Judgement chunked: %d chunks from %d estimated tokens",
         len(chunks),
-        _estimate_tokens(text),
+        estimate_tokens(text),
     )
     return chunks
 
 
-# ---------------------------------------------------------------------------
 # Statute chunking
-# ---------------------------------------------------------------------------
 
 _SECTION_RE = re.compile(
     r"(?:^|\n)"
@@ -230,7 +222,7 @@ def chunk_statute(text: str, metadata: dict) -> list[Chunk]:
         sections = [("", text)]
 
     # Include preamble if non-trivial
-    if preamble and _estimate_tokens(preamble) > 30:
+    if preamble and estimate_tokens(preamble) > 30:
         sections = [("Preamble", preamble)] + list(sections)
 
     act_name = metadata.get("act_name", "")
@@ -247,7 +239,7 @@ def chunk_statute(text: str, metadata: dict) -> list[Chunk]:
             "section_number": section_number or metadata.get("section_number"),
         }
 
-        if _estimate_tokens(section_text) <= CHUNK_MAX_TOKENS:
+        if estimate_tokens(section_text) <= CHUNK_MAX_TOKENS:
             chunk = Chunk(
                 text=section_text,
                 metadata=_build_metadata(per_chunk_meta, chunk_index=chunk_index),
@@ -270,17 +262,15 @@ def chunk_statute(text: str, metadata: dict) -> list[Chunk]:
                 chunks.append(chunk)
                 chunk_index += 1
 
-    logger.info(
+    logger.debug(
         "Statute chunked: %d chunks from %d estimated tokens",
         len(chunks),
-        _estimate_tokens(text),
+        estimate_tokens(text),
     )
     return chunks
 
 
-# ---------------------------------------------------------------------------
 # Constitution chunking
-# ---------------------------------------------------------------------------
 
 _ARTICLE_RE = re.compile(
     r"(?:^|\n)"
@@ -315,7 +305,7 @@ def chunk_constitution(text: str, metadata: dict) -> list[Chunk]:
     if not articles:
         articles = [("", text)]
 
-    if preamble and _estimate_tokens(preamble) > 30:
+    if preamble and estimate_tokens(preamble) > 30:
         articles = [("Preamble", preamble)] + list(articles)
 
     chunks: list[Chunk] = []
@@ -330,7 +320,7 @@ def chunk_constitution(text: str, metadata: dict) -> list[Chunk]:
             "section_number": article_number or metadata.get("section_number"),
         }
 
-        if _estimate_tokens(article_text) <= CHUNK_MAX_TOKENS:
+        if estimate_tokens(article_text) <= CHUNK_MAX_TOKENS:
             chunk = Chunk(
                 text=article_text,
                 metadata=_build_metadata(per_chunk_meta, chunk_index=chunk_index),
@@ -352,17 +342,15 @@ def chunk_constitution(text: str, metadata: dict) -> list[Chunk]:
                 chunks.append(chunk)
                 chunk_index += 1
 
-    logger.info(
+    logger.debug(
         "Constitution chunked: %d chunks from %d estimated tokens",
         len(chunks),
-        _estimate_tokens(text),
+        estimate_tokens(text),
     )
     return chunks
 
 
-# ---------------------------------------------------------------------------
 # Router
-# ---------------------------------------------------------------------------
 
 _STRATEGY_MAP = {
     "judgement": chunk_judgement,

@@ -4,17 +4,9 @@ authority scoring, weight adjustment, and hybrid search.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-
-# Path bootstrap
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import RRF_K
 from src.retrieval.hybrid_search import (
@@ -27,7 +19,6 @@ from src.retrieval.reranker import (
     AuthorityReranker,
     _normalise_court,
     _recency_weight,
-    _years_since,
 )
 
 
@@ -54,6 +45,7 @@ class TestQueryClassification:
         [
             ("Summarize Kesavananda Bharati v. State of Kerala", "case_lookup"),
             ("What was held in Maneka Gandhi vs Union of India?", "case_lookup"),
+            ("Explain the ruling in Vishaka v State of Rajasthan", "case_lookup"),
             ("AIR 2017 SC 4161 ruling", "case_lookup"),
             ("Explain the case (2017) 10 SCC 1", "case_lookup"),
         ],
@@ -124,8 +116,31 @@ class TestKeywordExtraction:
         terms = _extract_keyword_terms("tell me about something random")
         assert terms == []
 
+    def test_section_suffix_normalised(self) -> None:
+        assert _extract_keyword_terms("what is section 304a ipc") == ["Section 304A"]
 
-# Tests: Reciprocal Rank Fusion
+    @pytest.mark.parametrize(
+        "query,expected",
+        [
+            ("What was held in Maneka Gandhi v Union of India?", ["Maneka Gandhi"]),
+            ("Summarize Kesavananda Bharati v. State of Kerala", ["Kesavananda Bharati"]),
+            ("What was held in Indira Nehru Gandhi v Raj Narain?", ["Indira Nehru Gandhi", "Raj Narain"]),
+            ("Explain the MC Mehta v Union of India case", ["MC Mehta", "M.C. Mehta"]),
+            ("K.S. Puttaswamy versus Union of India", ["K.S. Puttaswamy"]),
+        ],
+    )
+    def test_case_party_names(self, query: str, expected: list[str]) -> None:
+        assert _extract_keyword_terms(query) == expected
+
+    def test_generic_parties_only(self) -> None:
+        assert _extract_keyword_terms("State of Punjab v Union of India") == []
+
+    def test_statute_comparison_is_not_a_case(self) -> None:
+        query = "Compare defamation provisions in IPC vs BNS"
+        assert _extract_keyword_terms(query) == ["IPC", "BNS"]
+        assert HybridSearch.classify_query(query) == "section_lookup"
+
+
 
 class TestRRFScoreCalculation:
 
@@ -394,7 +409,6 @@ class TestHybridSearch:
     ) -> None:
         empty_store = MagicMock()
         empty_store.query.return_value = {"ids": [[]]}
-        empty_store.get.return_value = {"ids": []}
 
         hs = HybridSearch(empty_store, mock_embedding_service)
         results = hs.search("some query")
@@ -413,49 +427,69 @@ class TestHybridSearch:
         self,
         mock_embedding_service: MagicMock,
     ) -> None:
-        store = MagicMock()
-        store.query.return_value = {
+        semantic = {
             "ids": [["c1"]],
             "documents": [["text"]],
             "metadatas": [[{"doc_type": "statute"}]],
             "distances": [[0.2]],
         }
-        store.get.side_effect = Exception("keyword search error")
+
+        def fake_query(**kwargs):
+            if "where_document" in kwargs:
+                raise Exception("keyword search error")
+            return semantic
+
+        store = MagicMock()
+        store.query.side_effect = fake_query
 
         hs = HybridSearch(store, mock_embedding_service)
         results = hs.search("Section 302 IPC")
         # Should still return semantic results even if keyword fails
-        assert len(results) > 0
+        assert [r["chunk_id"] for r in results] == ["c1"]
 
 
 class TestHybridSearchScoring:
 
-    def _store(self) -> MagicMock:
-        store = MagicMock()
-        store.query.return_value = {
-            "ids": [["sem_1"]],
-            "documents": [["Article 21 protects life and personal liberty."]],
-            "metadatas": [[{"doc_type": "constitution"}]],
-            "distances": [[0.25]],
+    @staticmethod
+    def _result(chunk_id: str, text: str, doc_type: str, distance: float) -> dict:
+        return {
+            "ids": [[chunk_id]],
+            "documents": [[text]],
+            "metadatas": [[{"doc_type": doc_type}]],
+            "distances": [[distance]],
         }
 
-        def fake_get(where_document, include, limit):
-            if where_document["$contains"] == "Section 302":
-                return {
-                    "ids": ["kw_1"],
-                    "documents": ["Section 302. Punishment for murder."],
-                    "metadatas": [{"doc_type": "statute"}],
-                    "embeddings": [[1.0, 0.0]],
-                }
-            return {"ids": [], "documents": [], "metadatas": [], "embeddings": []}
+    def _store(self) -> MagicMock:
+        """Semantic search finds sem_1; an exact match on "Section 302" finds
+        kw_1, and one on "Section 30" finds a passage that only mentions
+        Section 302, which must be dropped."""
+        empty = {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
 
-        store.get.side_effect = fake_get
+        def fake_query(query_embeddings, n_results, include, where_document=None):
+            if where_document is None:
+                return self._result("sem_1", "Article 21 protects life and personal liberty.", "constitution", 0.25)
+            term = where_document["$contains"]
+            if term == "Section 302":
+                return self._result("kw_1", "Section 302. Punishment for murder.", "statute", 0.4)
+            if term == "Section 30":
+                return self._result("kw_2", "Section 302. Punishment for murder.", "statute", 0.4)
+            return empty
+
+        store = MagicMock()
+        store.query.side_effect = fake_query
         return store
 
     def _embedder(self) -> MagicMock:
         embedder = MagicMock()
         embedder.embed_query.return_value = [0.6, 0.8]
         return embedder
+
+    def _searched_terms(self, store: MagicMock) -> list[str]:
+        return [
+            c.kwargs["where_document"]["$contains"]
+            for c in store.query.call_args_list
+            if "where_document" in c.kwargs
+        ]
 
     def test_cosine_distance_converted_to_similarity(self) -> None:
         results = HybridSearch(self._store(), self._embedder()).search("right to life")
@@ -465,19 +499,26 @@ class TestHybridSearchScoring:
     def test_keyword_hit_gets_semantic_score(self) -> None:
         results = HybridSearch(self._store(), self._embedder()).search("section 302 ipc")
         kw = next(r for r in results if r["chunk_id"] == "kw_1")
-        # cosine([0.6, 0.8], [1, 0]) = 0.6
         assert kw["semantic_score"] == pytest.approx(0.6)
+
+    def test_partial_identifier_match_dropped(self) -> None:
+        results = HybridSearch(self._store(), self._embedder()).search("Section 30 IPC")
+        assert all(r["chunk_id"] != "kw_2" for r in results)
 
     def test_lowercase_query_matches_title_case_text(self) -> None:
         store = self._store()
-        HybridSearch(store, self._embedder()).search("section 302")
-        searched = [c.kwargs["where_document"]["$contains"] for c in store.get.call_args_list]
-        assert "Section 302" in searched
+        HybridSearch(store, self._embedder()).search("section 304a")
+        assert self._searched_terms(store) == ["Section 304A", "section 304A"]
+
+    def test_case_name_searched_as_written(self) -> None:
+        store = self._store()
+        HybridSearch(store, self._embedder()).search("What was held in Maneka Gandhi v Union of India?")
+        assert self._searched_terms(store) == ["Maneka Gandhi"]
 
     def test_conceptual_query_skips_keyword_path(self) -> None:
         store = self._store()
         HybridSearch(store, self._embedder()).search("explain the doctrine of basic structure")
-        store.get.assert_not_called()
+        assert self._searched_terms(store) == []
 
 
 class TestRerankerRrfNormalisation:

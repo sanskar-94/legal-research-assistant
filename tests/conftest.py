@@ -199,7 +199,11 @@ def constitution_metadata() -> dict[str, Any]:
 
 @pytest.fixture()
 def mock_vectorstore() -> MagicMock:
-    """A MagicMock that mimics a ChromaDB collection interface."""
+    """A MagicMock that mimics a ChromaDB collection interface.
+
+    ``query`` answers both the semantic search and the filtered exact-match
+    searches with the same three chunks.
+    """
     store = MagicMock()
     store.query.return_value = {
         "ids": [["chunk_1", "chunk_2", "chunk_3"]],
@@ -219,17 +223,6 @@ def mock_vectorstore() -> MagicMock:
         ],
         "distances": [[0.1, 0.3, 0.5]],
     }
-    store.get.return_value = {
-        "ids": ["chunk_1", "chunk_4"],
-        "documents": [
-            "Section 302 IPC deals with punishment for murder.",
-            "Section 302 provides for death penalty or life imprisonment.",
-        ],
-        "metadatas": [
-            {"doc_type": "statute", "section_number": "302", "act_name": "IPC"},
-            {"doc_type": "statute", "section_number": "302", "act_name": "IPC"},
-        ],
-    }
     return store
 
 
@@ -238,7 +231,6 @@ def mock_embedding_service() -> MagicMock:
     """A MagicMock that returns a fixed-length embedding vector."""
     service = MagicMock()
     service.embed_query.return_value = [0.1] * 384
-    service.embed_text.return_value = [0.1] * 384
     return service
 
 

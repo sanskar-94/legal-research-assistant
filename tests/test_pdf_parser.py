@@ -7,17 +7,11 @@ of non-existent files, and empty PDF behaviour.  All heavy dependencies
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-# Path bootstrap
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
+from pydantic import ValidationError
 
 from src.ingestion.pdf_parser import OCR_CHAR_THRESHOLD, ParsedPage, parse_pdf
 
@@ -288,7 +282,7 @@ class TestParsedPageModel:
 
     def test_parsed_page_is_frozen(self) -> None:
         page = ParsedPage(page_number=1, text="hello", is_ocr=False)
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             page.text = "modified"
 
     def test_parsed_page_defaults(self) -> None:

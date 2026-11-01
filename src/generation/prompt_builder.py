@@ -9,7 +9,6 @@ in ``config.prompts``.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from config.prompts import (
     SOURCE_FORMAT_TEMPLATE,
@@ -80,6 +79,21 @@ def _default_metadata(chunk: dict) -> str:
     return f"Document type: {chunk.get('doc_type', 'unknown')}"
 
 
+_METADATA_FORMATTERS = {
+    "judgement": _judgement_metadata,
+    "statute": _statute_metadata,
+    "constitution": _constitution_metadata,
+    "mapping": _mapping_metadata,
+}
+
+
+def source_label(chunk: dict) -> str:
+    """One-line description of a retrieved chunk, e.g. ``"Act: IPC | Section: 302"``."""
+    flat = flatten_chunk(chunk)
+    formatter = _METADATA_FORMATTERS.get(flat.get("doc_type"), _default_metadata)
+    return formatter(flat)
+
+
 class PromptBuilder:
     """Builds citation-grounded prompts from retrieved chunks.
 
@@ -110,7 +124,12 @@ class PromptBuilder:
             logger.warning("No chunks provided - LLM will have no sources.")
 
         formatted_sources = "\n".join(
-            self._format_source(index=i + 1, chunk=chunk)
+            SOURCE_FORMAT_TEMPLATE.format(
+                index=i + 1,
+                doc_type=flatten_chunk(chunk).get("doc_type") or "unknown",
+                metadata_line=source_label(chunk),
+                text=chunk.get("text", ""),
+            )
             for i, chunk in enumerate(retrieved_chunks)
         )
 
@@ -126,42 +145,3 @@ class PromptBuilder:
         )
 
         return SYSTEM_PROMPT, user_prompt
-
-    # Internal helpers
-
-    def _format_source(self, index: int, chunk: dict) -> str:
-        """Format a single chunk as a numbered SOURCE block.
-
-        Args:
-            index: 1-based source number.
-            chunk: Dict with ``text``, ``doc_type``, and optional
-                   metadata fields (``case_name``, ``citation``,
-                   ``court``, ``date``, ``act_name``,
-                   ``section_number``).
-
-        Returns:
-            A string matching ``SOURCE_FORMAT_TEMPLATE``.
-        """
-        flat = flatten_chunk(chunk)
-        doc_type = flat.get("doc_type") or "unknown"
-        metadata_line = self._build_metadata_line(doc_type, flat)
-        text = flat.get("text", "")
-
-        return SOURCE_FORMAT_TEMPLATE.format(
-            index=index,
-            doc_type=doc_type,
-            metadata_line=metadata_line,
-            text=text,
-        )
-
-    @staticmethod
-    def _build_metadata_line(doc_type: str, chunk: dict) -> str:
-        """Dispatch to the correct metadata formatter by doc_type."""
-        formatters: dict[str, object] = {
-            "judgement": _judgement_metadata,
-            "statute": _statute_metadata,
-            "constitution": _constitution_metadata,
-            "mapping": _mapping_metadata,
-        }
-        formatter = formatters.get(doc_type, _default_metadata)
-        return formatter(chunk)

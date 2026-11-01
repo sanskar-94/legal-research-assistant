@@ -6,25 +6,17 @@ All LLM API calls are mocked.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Path bootstrap
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-
-from config.prompts import SOURCE_FORMAT_TEMPLATE, SYSTEM_PROMPT
-from src.generation.prompt_builder import PromptBuilder
+from config.prompts import SYSTEM_PROMPT
+from src.generation.prompt_builder import PromptBuilder, source_label
 from src.generation.response_parser import (
     CitedResponse,
     CitedSource,
     ResponseParser,
-    _tooltip_for,
 )
 
 
@@ -203,7 +195,7 @@ class TestResponseParsing:
             {"chunk_id": "c2", "text": "t2", "doc_type": "judgement"},
         ]
         result = response_parser.parse_response(text, chunks)
-        assert result.citation_count == 2
+        assert len(result.cited_sources) == 2
         assert len(result.cited_sources) == 2
 
     def test_deduplicates_repeated_references(
@@ -212,7 +204,7 @@ class TestResponseParsing:
         text = "[SOURCE_1] says this. [SOURCE_1] confirms it."
         chunks = [{"chunk_id": "c1", "text": "t", "doc_type": "statute"}]
         result = response_parser.parse_response(text, chunks)
-        assert result.citation_count == 1
+        assert len(result.cited_sources) == 1
 
     def test_no_references_found(
         self, response_parser: ResponseParser
@@ -220,8 +212,7 @@ class TestResponseParsing:
         text = "No citations here."
         chunks = [{"chunk_id": "c1", "text": "t", "doc_type": "statute"}]
         result = response_parser.parse_response(text, chunks)
-        assert result.citation_count == 0
-        assert len(result.uncited_sources) == 1
+        assert len(result.cited_sources) == 0
 
     def test_answer_text_preserved(
         self, response_parser: ResponseParser
@@ -230,6 +221,21 @@ class TestResponseParsing:
         chunks = [{"chunk_id": "c1", "text": "t", "doc_type": "statute"}]
         result = response_parser.parse_response(text, chunks)
         assert result.answer_text == text
+
+    def test_grouped_references_are_expanded(
+        self, response_parser: ResponseParser
+    ) -> None:
+        text = "Both apply [SOURCE_1, SOURCE_3]; see also [SOURCE_2;SOURCE_3]."
+        chunks = [
+            {"chunk_id": f"c{i}", "text": f"t{i}", "doc_type": "statute"}
+            for i in range(1, 4)
+        ]
+        result = response_parser.parse_response(text, chunks)
+        assert result.answer_text == (
+            "Both apply [SOURCE_1] [SOURCE_3]; see also [SOURCE_2] [SOURCE_3]."
+        )
+        assert [s.source_index for s in result.cited_sources] == [1, 3, 2]
+        assert result.citation_validity == 1.0
 
 
 # Tests: citation validation
@@ -241,7 +247,7 @@ class TestCitationValidation:
         chunks = [{"chunk_id": "c1", "text": "t", "doc_type": "statute"}]
         result = response_parser.parse_response(text, chunks)
         assert len(result.invalid_citations) == 0
-        assert result.citation_count == 1
+        assert len(result.cited_sources) == 1
 
     def test_invalid_reference_out_of_range(
         self, response_parser: ResponseParser
@@ -250,7 +256,7 @@ class TestCitationValidation:
         chunks = [{"chunk_id": "c1", "text": "t", "doc_type": "statute"}]
         result = response_parser.parse_response(text, chunks)
         assert "[SOURCE_5]" in result.invalid_citations
-        assert result.citation_count == 0
+        assert len(result.cited_sources) == 0
 
     def test_mixed_valid_and_invalid(
         self, response_parser: ResponseParser
@@ -261,7 +267,7 @@ class TestCitationValidation:
             {"chunk_id": "c2", "text": "t2", "doc_type": "judgement"},
         ]
         result = response_parser.parse_response(text, chunks)
-        assert result.citation_count == 1
+        assert len(result.cited_sources) == 1
         assert "[SOURCE_99]" in result.invalid_citations
         assert result.citation_validity == 0.5
 
@@ -282,7 +288,6 @@ class TestCitedResponseModel:
     def test_construction(self) -> None:
         resp = CitedResponse(
             answer_text="Answer",
-            answer_html="<p>Answer</p>",
             cited_sources=[
                 CitedSource(
                     source_index=1,
@@ -291,20 +296,17 @@ class TestCitedResponseModel:
                     metadata={"doc_type": "statute"},
                 )
             ],
-            citation_count=1,
         )
-        assert resp.citation_count == 1
         assert len(resp.cited_sources) == 1
         assert resp.cited_sources[0].chunk_id == "c1"
 
     def test_defaults(self) -> None:
-        resp = CitedResponse(answer_text="A", answer_html="A")
+        resp = CitedResponse(answer_text="A")
         assert resp.cited_sources == []
-        assert resp.uncited_sources == []
         assert resp.invalid_citations == []
-        assert resp.citation_count == 0
+        assert resp.citation_validity == 0.0
 
-    def test_uncited_sources_tracked(
+    def test_only_cited_sources_listed(
         self, response_parser: ResponseParser
     ) -> None:
         text = "Only [SOURCE_1] matters."
@@ -314,66 +316,41 @@ class TestCitedResponseModel:
             {"chunk_id": "c3", "text": "also unused", "doc_type": "constitution"},
         ]
         result = response_parser.parse_response(text, chunks)
-        assert len(result.uncited_sources) == 2
+        assert [s.chunk_id for s in result.cited_sources] == ["c1"]
 
-
-# Tests: HTML generation
-
-class TestHTMLGeneration:
-
-    def test_valid_citations_become_badges(
+    def test_cited_source_keeps_document_metadata(
         self, response_parser: ResponseParser
     ) -> None:
-        text = "See [SOURCE_1]."
-        chunks = [{"chunk_id": "c1", "text": "t", "doc_type": "statute"}]
-        result = response_parser.parse_response(text, chunks)
-        assert "citation-badge" in result.answer_html
-        assert 'data-source-index="1"' in result.answer_html
-
-    def test_invalid_citations_left_as_text(
-        self, response_parser: ResponseParser
-    ) -> None:
-        text = "See [SOURCE_99]."
-        chunks = [{"chunk_id": "c1", "text": "t", "doc_type": "statute"}]
-        result = response_parser.parse_response(text, chunks)
-        assert "[SOURCE_99]" in result.answer_html
-        assert "citation-badge" not in result.answer_html
+        chunks = [{"chunk_id": "c1", "text": "t", "metadata": {"doc_type": "statute", "act_name": "IPC"}}]
+        result = response_parser.parse_response("See [SOURCE_1].", chunks)
+        assert result.cited_sources[0].metadata == {"doc_type": "statute", "act_name": "IPC"}
 
 
-# Tests: tooltip generation
+# Tests: source labels
 
-class TestTooltips:
+class TestSourceLabel:
 
-    def test_judgement_tooltip(self) -> None:
-        chunk = {
+    def test_judgement_label(self) -> None:
+        label = source_label({
             "doc_type": "judgement",
             "case_name": "State v. X",
             "citation": "AIR 2020 SC 100",
             "court": "Supreme Court of India",
-        }
-        tip = _tooltip_for(chunk)
-        assert "State v. X" in tip
-        assert "AIR 2020 SC 100" in tip
+        })
+        assert label == "Case: State v. X | Citation: AIR 2020 SC 100 | Court: Supreme Court of India"
 
-    def test_statute_tooltip(self) -> None:
-        chunk = {
-            "doc_type": "statute",
-            "act_name": "IPC",
-            "section_number": "302",
-        }
-        tip = _tooltip_for(chunk)
-        assert "IPC" in tip
-        assert "Section 302" in tip
+    def test_statute_label_from_nested_metadata(self) -> None:
+        label = source_label({
+            "text": "...",
+            "metadata": {"doc_type": "statute", "act_name": "IPC", "section_number": "302"},
+        })
+        assert label == "Act: IPC | Section: 302"
 
-    def test_constitution_tooltip(self) -> None:
-        chunk = {"doc_type": "constitution", "section_number": "21"}
-        tip = _tooltip_for(chunk)
-        assert "Article 21" in tip
+    def test_constitution_label(self) -> None:
+        assert source_label({"doc_type": "constitution", "section_number": "21"}) == "Article: 21"
 
-    def test_unknown_doc_type_tooltip(self) -> None:
-        chunk = {"doc_type": "regulation"}
-        tip = _tooltip_for(chunk)
-        assert tip == "regulation"
+    def test_unknown_doc_type_label(self) -> None:
+        assert source_label({"doc_type": "regulation"}) == "Document type: regulation"
 
 
 # Tests: mock LLM API
@@ -442,10 +419,21 @@ class TestLLMClientMocked:
             client.generate("")
 
     def test_no_api_key_raises(self) -> None:
-        with patch.dict("os.environ", {}, clear=True):
+        with patch.dict("os.environ", {}, clear=True), patch(
+            "src.generation.llm_client.LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"
+        ):
             from src.generation.llm_client import LLMClient, LLMClientError
             with pytest.raises(LLMClientError, match="No API key"):
                 LLMClient()
+
+    def test_local_server_needs_no_api_key(self) -> None:
+        with patch.dict("os.environ", {}, clear=True), patch(
+            "src.generation.llm_client.LLM_BASE_URL", "http://127.0.0.1:8080/v1"
+        ):
+            from src.generation.llm_client import LLMClient
+            client = LLMClient()
+            self._mock_completion(client, "Section 302 IPC punishes murder. [SOURCE_1]")
+            assert client.generate("query") == "Section 302 IPC punishes murder. [SOURCE_1]"
 
 
 class TestFlattenChunk:

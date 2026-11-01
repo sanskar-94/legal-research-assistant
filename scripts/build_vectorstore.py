@@ -1,14 +1,19 @@
 """Build the ChromaDB vector store from pre-chunked JSON files.
 
 Reads all ``*.json`` files from ``data/processed/chunks/``, embeds the text
-of every chunk, and upserts the results into ChromaDB.
+of every chunk, and upserts the results into ChromaDB. Chunk ids are
+deterministic, so running this again updates chunks in place. Use
+``--reset`` to clear the collection first, e.g. after changing the chunker,
+so chunks that no longer exist are dropped.
 
 Usage:
     python scripts/build_vectorstore.py
+    python scripts/build_vectorstore.py --reset
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sys
@@ -36,6 +41,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("build_vectorstore")
 
+_UPSERT_BATCH_SIZE = 1000
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -45,7 +52,6 @@ def _load_chunks_from_file(filepath: Path) -> list[Chunk]:
     """Deserialise a JSON file into a list of Chunk models.
 
     Supports both a top-level JSON array and a single JSON object.
-    Returns a *new* list - the file is never modified.
     """
     try:
         with filepath.open("r", encoding="utf-8") as fh:
@@ -72,80 +78,70 @@ def _load_chunks_from_file(filepath: Path) -> list[Chunk]:
     return chunks
 
 
-def _discover_chunk_files(chunks_dir: Path) -> list[Path]:
-    """Return all JSON files inside *chunks_dir*, sorted by name."""
-    if not chunks_dir.exists():
-        logger.warning("Chunks directory does not exist: %s", chunks_dir)
-        return []
-
-    files = sorted(chunks_dir.glob("*.json"))
-    if not files:
-        logger.warning("No JSON files found in %s", chunks_dir)
-    return files
-
-
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    logger.info("=== Build Vector Store ===")
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="delete every indexed chunk before building",
+    )
+    args = parser.parse_args()
+
     start_time = time.time()
 
-    # 1. Discover chunk files
-    chunk_files = _discover_chunk_files(CHUNKS_DIR)
+    chunk_files = sorted(CHUNKS_DIR.glob("*.json"))
     if not chunk_files:
-        logger.info("Nothing to process. Exiting.")
-        return
-
-    logger.info("Found %d chunk file(s) in %s.", len(chunk_files), CHUNKS_DIR)
-
-    # 2. Load all chunks
-    all_chunks: list[Chunk] = []
-    for filepath in chunk_files:
-        loaded = _load_chunks_from_file(filepath)
-        logger.info("  Loaded %d chunk(s) from %s", len(loaded), filepath.name)
-        all_chunks.extend(loaded)
-
-    if not all_chunks:
-        logger.info("No valid chunks loaded. Exiting.")
-        return
-
-    logger.info("Total chunks loaded: %d", len(all_chunks))
+        logger.error(
+            "No chunk files in %s. Run prepare_hf_data.py and "
+            "chunk_documents.py first.",
+            CHUNKS_DIR,
+        )
+        sys.exit(1)
 
     # Duplicate ids (e.g. the same chunk in two files) would make ChromaDB
     # reject the whole upsert batch, so keep the first occurrence only.
     unique: dict[str, Chunk] = {}
-    for chunk in all_chunks:
-        unique.setdefault(chunk.chunk_id, chunk)
-    if len(unique) < len(all_chunks):
-        logger.info("Dropped %d duplicate chunk ids.", len(all_chunks) - len(unique))
+    loaded_count = 0
+    for filepath in chunk_files:
+        loaded = _load_chunks_from_file(filepath)
+        logger.info("Loaded %d chunk(s) from %s", len(loaded), filepath.name)
+        loaded_count += len(loaded)
+        for chunk in loaded:
+            unique.setdefault(chunk.chunk_id, chunk)
+
+    if not unique:
+        logger.error("No valid chunks loaded.")
+        sys.exit(1)
+
+    if len(unique) < loaded_count:
+        logger.info("Dropped %d duplicate chunk ids.", loaded_count - len(unique))
     all_chunks = list(unique.values())
 
-    # 3. Embed and upsert batch by batch so memory stays flat on large corpora
     embedding_service = EmbeddingService()
     vector_store = VectorStore()
-    upsert_batch_size = 1000
+    if args.reset:
+        vector_store.reset()
+
+    # Embed and upsert batch by batch so memory stays flat on large corpora
     total = len(all_chunks)
-    for start in range(0, total, upsert_batch_size):
-        end = min(start + upsert_batch_size, total)
-        batch_chunks = all_chunks[start:end]
+    for start in range(0, total, _UPSERT_BATCH_SIZE):
+        batch_chunks = all_chunks[start:start + _UPSERT_BATCH_SIZE]
         batch_embeddings = embedding_service.embed_batch(
             [chunk.text for chunk in batch_chunks],
             batch_size=EMBEDDING_BATCH_SIZE,
         )
         vector_store.add_chunks(batch_chunks, batch_embeddings)
-        logger.info("  Indexed %d / %d chunks", end, total)
+        logger.info("Indexed %d / %d chunks", start + len(batch_chunks), total)
 
-    # 4. Report
-    elapsed = time.time() - start_time
-    stats = vector_store.get_collection_stats()
-    logger.info("=== Build Complete ===")
-    logger.info("  Collection count : %d", stats["count"])
-    logger.info("  Elapsed time     : %.1f s", elapsed)
-
-    if stats["sample_metadata"]:
-        logger.info("  Sample metadata  : %s", stats["sample_metadata"][0])
+    logger.info(
+        "Build complete: %d chunks in the collection (%.1f s).",
+        vector_store.count(),
+        time.time() - start_time,
+    )
 
 
 if __name__ == "__main__":

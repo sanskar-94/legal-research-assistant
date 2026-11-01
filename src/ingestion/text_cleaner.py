@@ -25,7 +25,6 @@ _OCR_CORRECTIONS: Final[tuple[tuple[str, str], ...]] = (
     (r"(?<=\d)l(?=\d)", "1"),       # lowercase L between digits -> digit 1
     (r"(?<=\d)l(?=\s)", "1"),       # lowercase L after digit before space -> digit 1
     (r"\bII\b(?=\s+\d)", "11"),     # "II" before numbers -> "11" (common in section refs)
-    (r"(?<=\w)ff(?=\s)", "ff"),     # keep "ff" at word end (not a misread)
     (r"\btbe\b", "the"),            # common OCR misread
     (r"\bwitb\b", "with"),          # common OCR misread
     (r"\bwbich\b", "which"),        # common OCR misread

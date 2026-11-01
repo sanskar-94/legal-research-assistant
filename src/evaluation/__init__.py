@@ -1,1 +1,1 @@
-"""Evaluation helpers shared by scripts and UI components."""
+"""Answer-quality metrics used by the evaluation script."""

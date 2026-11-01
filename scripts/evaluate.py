@@ -1,9 +1,9 @@
-"""Run the evaluation set through the full pipeline and report metrics.
+`"""Run the evaluation set through the full pipeline and report metrics.
 
 Loads ``data/evaluation/test_queries.json``, sends each query through
 ``LegalResearchPipeline`` (IPC/BNS lookup, retrieval, generation, citation
 parsing, confidence), prints a summary table and writes per-query results
-to ``data/evaluation/eval_results.json``.
+to ``data/evaluation/eval_results_latest.json``.
 
 Usage:
     python scripts/evaluate.py
@@ -47,6 +47,7 @@ from src.evaluation.citation_metrics import (  # noqa: E402
     detect_hallucinations,
     is_substantive_response,
 )
+from src.pipeline import LegalResearchPipeline  # noqa: E402
 from src.retrieval.ipc_bns import MAPPING_CHUNK_ID  # noqa: E402
 
 logging.basicConfig(
@@ -54,6 +55,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger("evaluate")
+
 
 def _compute_retrieval_precision(
     retrieved_chunks: list[dict[str, Any]],
@@ -89,16 +91,16 @@ def evaluate(test_queries_path: Path | None = None, limit: int | None = None) ->
     logger.info("Loaded %d test queries from %s", len(test_queries), test_queries_path)
 
     try:
-        from src.pipeline import LegalResearchPipeline
-
-        pipeline = LegalResearchPipeline()
+        pipeline = LegalResearchPipeline.from_settings()
     except Exception as exc:
         logger.error("Failed to initialise pipeline: %s", exc)
-        logger.info(
-            "Check that NVIDIA_API_KEY is set, the vector store has been "
-            "built and all dependencies are installed."
-        )
         return {"summary": {}, "details": [], "error": str(exc)}
+    if not pipeline.can_generate:
+        return {
+            "summary": {},
+            "details": [],
+            "error": "No LLM API key configured. Set NVIDIA_API_KEY in .env.",
+        }
 
     details: list[dict[str, Any]] = []
 
@@ -112,7 +114,7 @@ def evaluate(test_queries_path: Path | None = None, limit: int | None = None) ->
         elapsed = time.monotonic() - start_time
 
         answer = result.answer_text or ""
-        sources = list(result.retrieved_chunks)
+        sources = result.sources
         retrieved = [c for c in sources if c.get("chunk_id") != MAPPING_CHUNK_ID]
 
         details.append({
@@ -159,7 +161,6 @@ def evaluate(test_queries_path: Path | None = None, limit: int | None = None) ->
     return {"summary": summary, "details": details}
 
 
-# Output formatting
 
 
 def _print_summary_table(summary: dict[str, Any]) -> None:
@@ -273,8 +274,9 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=EVAL_DIR / "eval_results.json",
-        help="where to write the JSON results",
+        default=EVAL_DIR / "eval_results_latest.json",
+        help="where to write the JSON results (eval_results.json holds the "
+        "run recorded in the project report, so it is not the default)",
     )
     args = parser.parse_args()
 

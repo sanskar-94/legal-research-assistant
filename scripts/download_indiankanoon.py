@@ -15,7 +15,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import quote_plus
 
 # ---------------------------------------------------------------------------
 # Path bootstrap
