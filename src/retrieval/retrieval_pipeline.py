@@ -1,4 +1,4 @@
-"""End-to-end retrieval pipeline: hybrid search followed by authority re-ranking."""
+"""End-to-end retrieval pipeline: hybrid search and authority re-ranking."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ import logging
 import re
 from typing import Any
 
-from config.settings import RERANKED_TOP_K, SEMANTIC_TOP_K
+from config.settings import (
+    RERANKED_TOP_K,
+    SEMANTIC_TOP_K,
+)
 from src.retrieval.hybrid_search import HybridSearch
 from src.retrieval.reranker import AuthorityReranker
 
@@ -26,7 +29,11 @@ class RetrievalPipeline:
         ``rrf_score``, ``authority_score``, ``final_score``
     """
 
-    def __init__(self, vectorstore: Any, embedding_service: Any) -> None:
+    def __init__(
+        self,
+        vectorstore: Any,
+        embedding_service: Any,
+    ) -> None:
         """Create the pipeline.
 
         Parameters

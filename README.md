@@ -27,7 +27,8 @@ question
   │  re-ranking → top 4 passages  │
   │                               ▼
   ├─ prompt with numbered sources [SOURCE_1] … [SOURCE_n]
-  ├─ LLM (DeepSeek V3.2 via NVIDIA NIM, temperature 0.1)
+  ├─ LLM: API model via NVIDIA NIM (LLM_BACKEND=api)
+  │   or Nyaya-Gen on the laptop (LLM_BACKEND=local)
   ├─ citation validation
   └─ confidence score → answer + sources
 ```
@@ -78,6 +79,39 @@ scripts/local_llm.sh stop          # frees the memory
 ```
 
 `LOCAL_LLM_MODEL_PATH` and `LOCAL_LLM_PORT` override the model file and port. A 1.7B model follows the citation format less reliably than DeepSeek V3.2, so expect lower citation validity than the recorded evaluation runs.
+
+### Nyaya-Gen: the answer writer trained for this project
+
+Nyaya-Gen is the one model trained in this project. It is `HuggingFaceTB/SmolLM2-135M-Instruct` (134.5M parameters), fully fine-tuned to write the answer from the numbered sources with `[SOURCE_N]` tags, in exactly the prompt format of the pipeline. It replaces the API model, so retrieval, generation and citation checking all run on the laptop with no key and no network. The rest of the pipeline is unchanged; citation validation and the confidence score check its answers exactly as they check the API model's.
+
+Select it with two settings (in `.env` or the environment):
+
+| Variable | Meaning |
+|---|---|
+| `LLM_BACKEND` | `api` (default: OpenAI-compatible API, e.g. Nemotron on NVIDIA NIM) or `local` (Nyaya-Gen) |
+| `NYAYA_GEN_PATH` | folder of the model to load when `LLM_BACKEND=local` (default `models/nyaya-gen/`) |
+
+```bash
+LLM_BACKEND=local python scripts/ask.py "What is Section 302 of IPC?"
+```
+
+At inference each source is cut to its first 90 words (as in training), decoding is greedy with repetition penalty 1.1, and at most 256 new tokens are written. If the model folder is missing, the pipeline logs a warning and returns the sources only.
+
+Training and evaluation (sized for an 8 GB M2; close other apps first):
+
+| Script | What it does |
+|---|---|
+| `scripts/prepare_generator_data.py` | builds `data/generator/{train,dev,test}.jsonl` and `data_stats.json` from the statute and Constitution Q&A datasets (qa, IPC/BNS mapping and refusal examples, with test queries filtered out) |
+| `scripts/train_generator.py` | fine-tunes SmolLM2-135M-Instruct (fp32, gradient checkpointing, AdamW lr 1e-4, gradient accumulation 8), keeps the checkpoint with the lowest dev loss in `models/nyaya-gen/` and logs to `data/generator/training_log.json` |
+| `scripts/run_training.sh` | prepares the data if it is missing, then runs `train_generator.py` with the settings used for the report |
+| `scripts/run_evaluation.sh` | 1) Run D: Nyaya-Gen on the 50 test queries (`data/evaluation/eval_results_local.json`); 2) `scripts/retrieval_experiments.py` for the retrieval tables; 3) Run D0: the base SmolLM2-135M-Instruct, not fine-tuned (`eval_results_local_base.json`) |
+
+```bash
+nohup caffeinate -i scripts/run_training.sh > logs/training.log 2>&1 &
+nohup caffeinate -i scripts/run_evaluation.sh > logs/evaluation.log 2>&1 &
+```
+
+What the recorded training run did: 2,585 of the 4,000 built training examples fit in 1,024 tokens; one epoch would be 323 updates of 8 examples. At about 0.8 minutes per update the run completed about 80 updates in about 65 minutes before the 8 GB Mac ran out of memory, so the kept checkpoint is the one at update 50 (about 400 examples seen). The dev loss fell from 0.833 before training to 0.033 at that checkpoint. Design details are in `docs/MODEL_PLAN.md`.
 
 ## Building the knowledge base
 
@@ -233,15 +267,19 @@ src/
   chunking/                section / article / paragraph chunkers
   embeddings/              sentence-transformers wrapper, ChromaDB store
   retrieval/               query classification, hybrid search, re-ranking, IPC/BNS lookup
-  generation/              LLM client, prompt builder, citation parser
+  generation/              LLM client, local Nyaya-Gen generator, prompt builder, citation parser
   confidence/              four-signal confidence score
   evaluation/              citation, hallucination and response metrics
   pipeline.py              LegalResearchPipeline: ties the stages together
 scripts/
   ask.py                   command-line question answering
+  prepare_generator_data.py, train_generator.py   Nyaya-Gen data and training
+  run_training.sh, run_evaluation.sh             train Nyaya-Gen; run Runs D / D0 and the retrieval tables
   …                        data download, parsing, chunking, indexing, evaluation
 tests/                     pytest suite
 data/evaluation/           test queries and recorded results
+data/generator/            Nyaya-Gen training data and training log
+models/                    trained Nyaya-Gen weights (not in git)
 ```
 
 ## Limitations
@@ -250,6 +288,7 @@ data/evaluation/           test queries and recorded results
 - Much of the Hugging Face data is question-and-answer pairs or judgments without metadata. Many judgment chunks have no case name, date or citation count, so their authority score falls back to defaults.
 - The IPC/BNS table covers 63 commonly used sections, not the whole code.
 - The default corpus comes from Hugging Face datasets and does not include the bare text of every IPC/BNS section. For section-level questions, run `download_statutes.py` too, which adds the full Acts from India Code.
+- Nyaya-Gen was trained for only 50 effective updates (about 400 examples) because of the 8 GB memory limit, and it was trained to restate one source per answer, so it does not combine or compare sources.
 - The hallucination check is pattern-based. It catches invented case names and reporter citations, but not a wrong statement attributed to a real source. The citation-support metric is a rough check against that.
 
 ## References

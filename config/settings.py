@@ -78,3 +78,12 @@ IPC_BNS_MAPPING_PATH = PROJECT_ROOT / "config" / "ipc_bns_mapping.json"
 # Scraping
 INDIANKANOON_DELAY = 1.0  # seconds between requests
 MAX_JUDGEMENTS = 200
+
+# Answer writer. "api" = OpenAI-compatible endpoint above (LLMClient);
+# "local" = Nyaya-Gen, the fine-tuned SmolLM2-135M in models/nyaya-gen
+# (scripts/train_generator.py). Sources are cut to the length used in training.
+LLM_BACKEND = os.getenv("LLM_BACKEND", "api").strip().lower()
+LOCAL_GENERATOR_BASE_MODEL = "HuggingFaceTB/SmolLM2-135M-Instruct"
+LOCAL_GENERATOR_PATH = Path(os.getenv("NYAYA_GEN_PATH", PROJECT_ROOT / "models" / "nyaya-gen"))
+LOCAL_GENERATOR_SOURCE_WORDS = 90
+LOCAL_GENERATOR_MAX_NEW_TOKENS = 256

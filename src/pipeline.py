@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from config.settings import LLM_BACKEND
 from src.confidence.scorer import ConfidenceResult, ConfidenceScorer
 from src.generation.llm_client import LLMClient, LLMClientError
 from src.generation.prompt_builder import PromptBuilder
@@ -89,11 +90,21 @@ class LegalResearchPipeline:
             )
         retrieval = RetrievalPipeline(vectorstore.collection, EmbeddingService())
 
-        try:
-            llm_client: Optional[LLMClient] = LLMClient()
-        except LLMClientError as exc:
-            logger.warning("LLM disabled: %s", exc)
-            llm_client = None
+        llm_client: Any
+        if LLM_BACKEND == "local":
+            from src.generation.local_generator import LocalGenerator, LocalGeneratorError
+
+            try:
+                llm_client = LocalGenerator()
+            except LocalGeneratorError as exc:
+                logger.warning("Local LLM disabled: %s", exc)
+                llm_client = None
+        else:
+            try:
+                llm_client = LLMClient()
+            except LLMClientError as exc:
+                logger.warning("LLM disabled: %s", exc)
+                llm_client = None
 
         try:
             mapper: Optional[IpcBnsMapper] = IpcBnsMapper()

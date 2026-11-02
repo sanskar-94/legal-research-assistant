@@ -1,0 +1,68 @@
+{
+  "test_split": "data/generator/test.jsonl",
+  "kinds": {
+    "qa": 181,
+    "refusal": 19
+  },
+  "models": {
+    "nyaya-gen": {
+      "examples": 200,
+      "exact_match": 0.7,
+      "token_f1": 0.9273,
+      "rouge1_f1": 0.9298,
+      "rouge2_f1": 0.9229,
+      "rougeL_f1": 0.9281,
+      "bleu": 88.9495,
+      "chrf": 90.9501,
+      "bertscore_f1": 0.9783,
+      "semantic_similarity": 0.9566,
+      "citation_format_validity": 0.989,
+      "correct_source_accuracy": 0.8895,
+      "citation_precision": 0.8994,
+      "citation_recall": 0.8895,
+      "citation_f1": 0.8944,
+      "refusal_accuracy": 0.985,
+      "refusal_precision": 0.9444,
+      "refusal_recall": 0.8947,
+      "refusal_f1": 0.9189,
+      "refusal_confusion": {
+        "tp": 17,
+        "fp": 1,
+        "fn": 2,
+        "tn": 180
+      },
+      "mean_answer_words": 55.64,
+      "mean_generation_seconds": 1.1081,
+      "perplexity": 1.03
+    },
+    "base": {
+      "examples": 200,
+      "exact_match": 0.01,
+      "token_f1": 0.4212,
+      "rouge1_f1": 0.4487,
+      "rouge2_f1": 0.3579,
+      "rougeL_f1": 0.4039,
+      "bleu": 21.0444,
+      "chrf": 51.6356,
+      "bertscore_f1": 0.8297,
+      "semantic_similarity": 0.7246,
+      "citation_format_validity": 0.0497,
+      "correct_source_accuracy": 0.0,
+      "citation_precision": 0.2,
+      "citation_recall": 0.0221,
+      "citation_f1": 0.0398,
+      "refusal_accuracy": 0.91,
+      "refusal_precision": 1.0,
+      "refusal_recall": 0.0526,
+      "refusal_f1": 0.1,
+      "refusal_confusion": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 18,
+        "tn": 181
+      },
+      "mean_answer_words": 119.52,
+      "mean_generation_seconds": 1.697
+    }
+  }
+}

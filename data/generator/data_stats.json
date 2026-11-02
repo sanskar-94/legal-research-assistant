@@ -1,0 +1,22 @@
+{
+  "qa_records": 23939,
+  "removed_by_leakage_filter": 572,
+  "train": {
+    "qa": 3590,
+    "mapping": 141,
+    "refusal": 269,
+    "total": 4000
+  },
+  "dev": {
+    "qa": 179,
+    "mapping": 0,
+    "refusal": 21,
+    "total": 200
+  },
+  "test": {
+    "qa": 181,
+    "mapping": 0,
+    "refusal": 19,
+    "total": 200
+  }
+}

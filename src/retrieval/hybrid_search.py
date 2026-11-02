@@ -183,6 +183,49 @@ def _reciprocal_rank_fusion(
     return dict(scores)
 
 
+def fuse_hits(
+    semantic_hits: list[dict[str, Any]],
+    keyword_hits: list[dict[str, Any]],
+    sem_weight: float,
+    kw_weight: float,
+    k: int = RRF_K,
+) -> list[dict[str, Any]]:
+    """Weighted RRF of the dense and exact-match lists (eq. 3 and 4).
+
+    ``R(c) = alpha * RRF_sem(c) + beta * RRF_kw(c)`` with
+    ``RRF_L(c) = 1 / (k + r_L(c))`` and ``RRF_L(c) = 0`` when ``c`` is not in
+    ``L``. Every chunk of either list is kept (a chunk found by both keeps
+    the dense hit's fields); the result is sorted by ``rrf_score``,
+    descending, with ties left in dense-then-exact order.
+    """
+    semantic_ranked = [h["chunk_id"] for h in semantic_hits]
+    keyword_ranked = [h["chunk_id"] for h in keyword_hits]
+
+    # Collect every hit by chunk_id (prefer semantic result for score)
+    hits_by_id: dict[str, dict[str, Any]] = {}
+    for hit in semantic_hits:
+        hits_by_id.setdefault(hit["chunk_id"], {**hit})
+    for hit in keyword_hits:
+        if hit["chunk_id"] not in hits_by_id:
+            hits_by_id[hit["chunk_id"]] = {**hit}
+
+    semantic_rrf = _reciprocal_rank_fusion([semantic_ranked], k=k)
+    keyword_rrf = _reciprocal_rank_fusion([keyword_ranked], k=k)
+
+    merged: list[dict[str, Any]] = [
+        {
+            **hit,
+            "rrf_score": (
+                sem_weight * semantic_rrf.get(chunk_id, 0.0)
+                + kw_weight * keyword_rrf.get(chunk_id, 0.0)
+            ),
+        }
+        for chunk_id, hit in hits_by_id.items()
+    ]
+    merged.sort(key=lambda r: r["rrf_score"], reverse=True)
+    return merged
+
+
 class HybridSearch:
     """Dual-path retrieval combining semantic and keyword search with
     query-adaptive weighting and Reciprocal Rank Fusion."""
@@ -281,7 +324,31 @@ class HybridSearch:
         hits = sorted(all_hits.values(), key=lambda h: h["semantic_score"], reverse=True)
         return hits[:top_k]
 
-    # Public search method
+    # Public search methods
+
+    def search_paths(self, query: str, top_k: int = SEMANTIC_TOP_K) -> dict[str, Any]:
+        """Run both retrieval paths once, without fusing them.
+
+        Returns ``{"classification", "semantic_hits", "keyword_hits"}``:
+        the query type, the ``top_k`` nearest chunks, and the ``top_k``
+        nearest chunks that contain one of the query's legal identifiers.
+        ``search`` fuses these; ``scripts/retrieval_experiments.py`` caches
+        them so every fusion and re-ranking setting sees the same candidates.
+        """
+        classification = self.classify_query(query)
+        query_embedding: list[float] = self._embedding_service.embed_query(query)
+        semantic_hits = self._semantic_search(query_embedding, top_k)
+        keyword_hits = self._keyword_search(query, query_embedding, top_k)
+
+        logger.debug(
+            "Semantic hits: %d, keyword hits: %d",
+            len(semantic_hits), len(keyword_hits),
+        )
+        return {
+            "classification": classification,
+            "semantic_hits": semantic_hits,
+            "keyword_hits": keyword_hits,
+        }
 
     def search(self, query: str, top_k: int = SEMANTIC_TOP_K) -> list[dict[str, Any]]:
         """Execute hybrid search and return merged results sorted by RRF score.
@@ -308,44 +375,10 @@ class HybridSearch:
             classification, sem_weight, kw_weight,
         )
 
-        query_embedding: list[float] = self._embedding_service.embed_query(query)
-        semantic_hits = self._semantic_search(query_embedding, top_k)
-        keyword_hits = self._keyword_search(query, query_embedding, top_k)
-
-        logger.debug(
-            "Semantic hits: %d, keyword hits: %d",
-            len(semantic_hits), len(keyword_hits),
+        paths = self.search_paths(query, top_k)
+        merged = fuse_hits(
+            paths["semantic_hits"], paths["keyword_hits"], sem_weight, kw_weight, k=RRF_K,
         )
-
-        # Build ranked id lists for RRF
-        semantic_ranked = [h["chunk_id"] for h in semantic_hits]
-        keyword_ranked = [h["chunk_id"] for h in keyword_hits]
-
-        # Collect every hit by chunk_id (prefer semantic result for score)
-        hits_by_id: dict[str, dict[str, Any]] = {}
-        for hit in semantic_hits:
-            hits_by_id[hit["chunk_id"]] = {**hit}
-        for hit in keyword_hits:
-            if hit["chunk_id"] not in hits_by_id:
-                hits_by_id[hit["chunk_id"]] = {**hit}
-
-        # RRF contribution of each list, weighted by the query classification
-        semantic_rrf = _reciprocal_rank_fusion([semantic_ranked])
-        keyword_rrf = _reciprocal_rank_fusion([keyword_ranked])
-
-        # Compute weighted RRF score per chunk
-        merged: list[dict[str, Any]] = []
-        for chunk_id, hit in hits_by_id.items():
-            rrf_score = (
-                sem_weight * semantic_rrf.get(chunk_id, 0.0)
-                + kw_weight * keyword_rrf.get(chunk_id, 0.0)
-            )
-            merged.append({
-                **hit,
-                "rrf_score": rrf_score,
-            })
-
-        merged.sort(key=lambda r: r["rrf_score"], reverse=True)
 
         logger.info("Hybrid search returned %d merged candidates", len(merged))
         return merged

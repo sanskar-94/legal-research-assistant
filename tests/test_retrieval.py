@@ -554,3 +554,65 @@ class TestWholeTermMatch:
         assert pattern.search("under article 21, every person")
         assert not pattern.search("Article 210 deals with language")
         assert not pattern.search("Article 21A on education")
+
+
+class TestFuseHits:
+
+    def test_weighted_rrf_formula(self) -> None:
+        from src.retrieval.hybrid_search import fuse_hits
+
+        sem = [{"chunk_id": "a", "semantic_score": 0.9}, {"chunk_id": "b", "semantic_score": 0.8}]
+        kw = [{"chunk_id": "b", "semantic_score": 0.8}, {"chunk_id": "c", "semantic_score": 0.5}]
+        fused = {h["chunk_id"]: h["rrf_score"] for h in fuse_hits(sem, kw, 0.3, 0.7, k=60)}
+        assert fused["a"] == pytest.approx(0.3 / 61)
+        assert fused["b"] == pytest.approx(0.3 / 62 + 0.7 / 61)
+        assert fused["c"] == pytest.approx(0.7 / 62)
+
+    def test_search_uses_fuse_hits(self, mock_vectorstore: MagicMock, mock_embedding_service: MagicMock) -> None:
+        hs = HybridSearch(mock_vectorstore, mock_embedding_service)
+        paths = hs.search_paths("Section 302 IPC", top_k=20)
+        assert paths["classification"] == "section_lookup"
+        assert [h["chunk_id"] for h in paths["semantic_hits"]] == ["chunk_1", "chunk_2", "chunk_3"]
+        results = hs.search("Section 302 IPC")
+        assert results[0]["rrf_score"] == pytest.approx(0.3 / (RRF_K + 1) + 0.7 / (RRF_K + 1))
+
+
+class TestRerankerParameters:
+
+    def test_custom_weights(self) -> None:
+        chunk = {"chunk_id": "a", "semantic_score": 0.8, "rrf_score": 0.0, "metadata": {"doc_type": "statute"}}
+        default = AuthorityReranker().rerank([chunk], top_k=1)[0]["final_score"]
+        assert default == pytest.approx(0.5 * 0.8 + 0.25 * 1.0)
+        semantic_only = AuthorityReranker().rerank([chunk], top_k=1, weights=(1.0, 0.0, 0.0))
+        assert semantic_only[0]["final_score"] == pytest.approx(0.8)
+
+    def test_rrf_rescaled_with_given_k(self) -> None:
+        chunk = {"chunk_id": "a", "semantic_score": 0.0, "rrf_score": 0.5 / 11, "metadata": {"doc_type": "statute"}}
+        scored = AuthorityReranker().rerank([chunk], top_k=1, weights=(0.0, 1.0, 0.0), rrf_k=10)
+        assert scored[0]["final_score"] == pytest.approx(0.5)
+
+
+class TestCourtWeights:
+
+    def test_unknown_court_class_gets_default(self) -> None:
+        # eq. 5 has four court classes; a court string that is none of them is "unknown"
+        acts = AuthorityReranker.compute_authority_score(
+            {"doc_type": "judgement", "court": "Appellate Authority under the Act"}
+        )
+        unknown = AuthorityReranker.compute_authority_score({"doc_type": "judgement", "court": ""})
+        assert acts == unknown == pytest.approx(0.4 * 0.3 + 0.3 * 0.2 + 0.3 * 0.5)
+
+    def test_tribunal_abbreviation_needs_whole_word(self) -> None:
+        assert _normalise_court("Satara District Court") != "tribunal"
+        assert _normalise_court("ITAT Mumbai") == "tribunal"
+
+    @pytest.mark.parametrize(
+        "court,expected",
+        [("Supreme Court of India", 1.0), ("Delhi High Court", 0.7), ("NCLT", 0.4), (None, 0.3)],
+    )
+    def test_court_weight_values(self, court: str | None, expected: float) -> None:
+        score = AuthorityReranker.compute_authority_score(
+            {"doc_type": "judgement", "court": court, "citation_count": 100}
+        )
+        # undated -> recency 0.2; 100 citations -> 1.0
+        assert score == pytest.approx(0.4 * expected + 0.3 * 0.2 + 0.3 * 1.0)
