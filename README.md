@@ -111,7 +111,7 @@ nohup caffeinate -i scripts/run_training.sh > logs/training.log 2>&1 &
 nohup caffeinate -i scripts/run_evaluation.sh > logs/evaluation.log 2>&1 &
 ```
 
-What the recorded training run did: 2,585 of the 4,000 built training examples fit in 1,024 tokens; one epoch would be 323 updates of 8 examples. At about 0.8 minutes per update the run completed about 80 updates in about 65 minutes before the 8 GB Mac ran out of memory, so the kept checkpoint is the one at update 50 (about 400 examples seen). The dev loss fell from 0.833 before training to 0.033 at that checkpoint. Design details are in `docs/MODEL_PLAN.md`.
+What the recorded training run did: 2,585 of the 4,000 built training examples fit in 1,024 tokens; one epoch would be 323 updates of 8 examples. At about 0.8 minutes per update the run completed about 80 updates in about 65 minutes before the 8 GB Mac ran out of memory, so the kept checkpoint is the one at update 50 (about 400 examples seen). The dev loss fell from 0.833 before training to 0.033 at that checkpoint.
 
 ## Building the knowledge base
 
