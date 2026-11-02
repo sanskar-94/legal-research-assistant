@@ -56,7 +56,7 @@ T_XI = table_block(
 
 T_XII = table_block(
     "<b>TABLE XII.</b> Standard LLM metrics on the 200 held out test examples of the Nyaya-Gen data.",
-    ["Metric", "SmolLM2-135M (not fine tuned)", "Nyaya-Gen"],
+    ["Metric", "SmolLM2-135M (before training)", "Nyaya-Gen"],
     [
         ["Token F1", "0.42", "0.93"],
         ["ROUGE-L F1", "0.40", "0.93"],
@@ -80,8 +80,8 @@ BLOCKS = [
          "the retrieval, prompt, citation validation and confidence scoring are kept exactly same. Nothing else in the "
          "pipeline is changed, so any difference between the runs usually comes from the writer only."),
     para("<i>1)</i> <i>Model and objective:</i> We used the SmolLM2-135M-Instruct [15], a decoder only model with 134.5M "
-         "parameters which is about 4,000 times much more smaller than the 550B API model, and fine tuned all of its "
-         "weights. Each training example is the exact same prompt <i>x</i> that the pipeline sends to the LLM (system "
+         "parameters which is about 4,000 times much more smaller than the 550B API model, and trained all of its "
+         "weights on our task. Each training example is the exact same prompt <i>x</i> that the pipeline sends to the LLM (system "
          "rules, numbered sources and the question) and a target answer <i>y</i> that cites the right source as "
          "[SOURCE_<i>k</i>]. The loss is the next token cross entropy computed only over the answer tokens <i>A</i>, "
          "so model learns to write the answer and does not learn to repeat the prompt,"),
@@ -124,11 +124,11 @@ BLOCKS = [
          "of the answer itself takes only about 11 to 15 s. Run D needs no network, no API key and it has no cost per "
          "request."),
     para("<i>5)</i> <i>Standard metrics:</i> To compare with the usual way an LLM is evaluated in the industry, both "
-         "the Nyaya-Gen and the same SmolLM2-135M before fine tuning answered the 200 held out test examples of its data "
+         "the Nyaya-Gen and the same SmolLM2-135M before our training answered the 200 held out test examples of its data "
          "(181 cited answers and 19 refusals, never seen in the training), and their answers are compared with the gold "
          "answer by three common metrics with the [SOURCE_<i>k</i>] tags removed: token F1 (the word overlap used in the "
          "SQuAD), ROUGE-L F1 (the longest common word sequence) and BERTScore F1 (meaning similarity from BERT "
-         "embeddings, here with DistilBERT). Table XII shows that fine tuning raises the token F1 from 0.42 to 0.93, the "
+         "embeddings, here with DistilBERT). Table XII shows that our training raises the token F1 from 0.42 to 0.93, the "
          "ROUGE-L from 0.40 to 0.93 and the BERTScore from 0.83 to 0.98. These scores are high because the target "
          "usually restates the right source closely, so they show mostly that the model learned to find and restate the "
          "right source in the required format and not a deeper legal reasoning."),
@@ -136,15 +136,15 @@ BLOCKS = [
     para("These results should be read much more carefully. Answers of the Nyaya-Gen are much shorter and plainer, "
          "because its training targets restate one source in at most four sentences, so it was never taught to combine "
          "the several sources or to compare them by their authority, and the six metrics do not measure these qualities. "
-         "It was trained for only 50 updates with one seed, and the same small model before the fine tuning was "
+         "It was trained for only 50 updates with one seed, and the same small model before our training was "
          "compared only on the held out examples of Table XII and not on the 50 end to end test queries."),
     ("gap", 6),
     piece_block(fitz.Rect(40, 257, 305, 521)),          # original "V. Conclusion"
-    para("In addition, a 135M parameter answer writer, Nyaya-Gen, that was fine tuned on the same 8 GB laptop in about "
+    para("In addition, a 135M parameter answer writer, Nyaya-Gen, that was trained on the same 8 GB laptop in about "
          "one hour lets the whole system run offline, and on the 50 test queries it reached a citation validity of 0.74 "
          "and a response rate of 0.72 with no flagged hallucinations, against 0.70, 0.68 and 0.04 for the 550B API model. "
          "Its training was cut short by the memory of the laptop, so the longer training, answers which combine several "
-         "sources and a comparison with the model before fine tuning are left for the future work."),
+         "sources and a comparison with the model before training are left for the future work."),
     ("gap", 14),
     piece_block(fitz.Rect(40, 544, 305, 699)),          # original "References" [1]-[4]
     piece_block(fitz.Rect(310, 50, 575, 333)),          # original references [5]-[14]

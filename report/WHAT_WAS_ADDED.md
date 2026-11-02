@@ -12,7 +12,7 @@ Final report: `report/Final_Report_with_Nyaya-Gen.pdf` (9 pages; the original wa
 |---|---|---|
 | 1 | Page 7, left column, after the paragraph "Table VIII (left) thus confirms…" | New subsection heading **E. Local Answer Writer: Nyaya-Gen** (the last subsection of Section IV, after "D. Hyperparameter Tuning") |
 | 2 | Page 7, left column | Opening paragraph: why a local writer (Runs A–C need the API, network and key); Section III has no trainable parameters, so one component is trained; only the writer changes |
-| 3 | Page 7, left column | **1) Model and objective:** SmolLM2-135M-Instruct [15], 134.5M parameters, full fine-tune, loss only on answer tokens |
+| 3 | Page 7, left column | **1) Model and objective:** SmolLM2-135M-Instruct [15], 134.5M parameters, all weights trained, loss only on answer tokens |
 | 4 | Page 7, left column | **Equation (9)**: J_G(θ) = −(1/\|A\|) Σ_{t∈A} log p_θ(y_t \| y_<t, x). The report's last equation was (8). |
 | 5 | Page 7, left → right column | **2) Training data:** how the examples were built (own record hidden among distractors, mapping, refusal), the leakage filter (572 removed), the 94/3/3 split, the 90-word passages and the 1,024-token limit |
 | 6 | Page 7, right column | **TABLE IX.** Training data of the Nyaya-Gen (3,590 Q&A, 141 mapping, 269 refusal, 4,000 built, 2,585 used, 24 dev, 572 removed) |
@@ -22,7 +22,7 @@ Final report: `report/Final_Report_with_Nyaya-Gen.pdf` (9 pages; the original wa
 | 10 | Page 8, left column | **4) End to end results:** Run D vs Run C: validity 0.74 vs 0.70, coverage 0.66 vs 0.42, support 0.56 vs 0.50, hallucination 0.00 vs 0.04, response 0.72 vs 0.68, confidence 0.45 vs 0.61 (and why it is lower) |
 | 11 | Page 8, left column | **TABLE XI.** End-to-end results of Run C (API) and Run D (Nyaya-Gen), also listing writer size and whether a network is needed |
 | 12 | Page 8, left column | Latency paragraph: 45.0 s vs 17.5 s, most of it the exact-match scan (~62 s on identifier queries, with memory swapping); writing takes 11–15 s |
-| 13 | Page 8, left → right column | **5) Standard metrics:** token F1, ROUGE-L F1 and BERTScore F1 on the 200 held-out test examples, for Nyaya-Gen and the same model before fine-tuning |
+| 13 | Page 8, left → right column | **5) Standard metrics:** token F1, ROUGE-L F1 and BERTScore F1 on the 200 held-out test examples, for Nyaya-Gen and the same model before training |
 | 14 | Page 8, right column | **TABLE XII.** Standard LLM metrics: F1 0.42 → 0.93, ROUGE-L 0.40 → 0.93, BERTScore 0.83 → 0.98 |
 | 15 | Page 8, right column | Limitations paragraph: short plain answers; 50 updates with one seed; the base model was compared only on the held-out examples |
 | 16 | Page 8, right column | (original "V. Conclusion" paragraph, unchanged) |
