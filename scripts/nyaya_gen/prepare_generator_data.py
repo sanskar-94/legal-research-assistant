@@ -31,7 +31,7 @@ import re
 import sys
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import DATA_DIR, EVAL_DIR, RAW_DIR  # noqa: E402
@@ -50,8 +50,8 @@ describe give state india indian law legal""".split())
 
 
 def _load_prepare_module():
-    """Import scripts/prepare_hf_data.py so the Q&A records match the index exactly."""
-    path = _PROJECT_ROOT / "scripts" / "prepare_hf_data.py"
+    """Import scripts/data/prepare_hf_data.py so the Q&A records match the index exactly."""
+    path = _PROJECT_ROOT / "scripts" / "data" / "prepare_hf_data.py"
     spec = importlib.util.spec_from_file_location("prepare_hf_data", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

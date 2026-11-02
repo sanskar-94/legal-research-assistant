@@ -2,7 +2,7 @@
 
 Drop-in replacement for ``LLMClient``: same ``generate(prompt, system_prompt)``
 call, but the model runs on this machine instead of an API. Select it with
-``LLM_BACKEND=local`` in ``.env``. Training: ``scripts/train_generator.py``.
+``LLM_BACKEND=local`` in ``.env``. Training: ``scripts/nyaya_gen/train_generator.py``.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class LocalGenerator:
         self.model_path = Path(model_path or LOCAL_GENERATOR_PATH)
         if not (self.model_path / "config.json").exists():
             raise LocalGeneratorError(
-                f"No trained model at {self.model_path}. Run scripts/train_generator.py first."
+                f"No trained model at {self.model_path}. Run scripts/nyaya_gen/train_generator.py first."
             )
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer

@@ -56,29 +56,9 @@ pip install -r requirements.txt
 cp .env.example .env               # then put your NVIDIA_API_KEY in .env
 ```
 
-A free API key is available at [build.nvidia.com](https://build.nvidia.com). NVIDIA moves models between free and partner endpoints from time to time. If `deepseek-ai/deepseek-v3.2` is not available on your key, set `LLM_MODEL` to another chat model from the catalogue. Any other OpenAI-compatible endpoint also works if you set `LLM_BASE_URL` and `LLM_MODEL` in `.env`.
+A free API key is available at [build.nvidia.com](https://build.nvidia.com). NVIDIA moves models between free and partner endpoints from time to time. If `nvidia/nemotron-3-ultra-550b-a55b` is not available on your key, set `LLM_MODEL` to another chat model from the catalogue. Any other OpenAI-compatible endpoint also works if you set `LLM_BASE_URL` and `LLM_MODEL` in `.env`.
 
 Without a key the assistant still returns the retrieved sources for each question, but it cannot write an answer.
-
-### Running locally
-
-The assistant can also run fully offline with [LFM3-1.7B](https://huggingface.co/LiquidAI/LFM3-1.7B) served by llama.cpp. No API key is needed, and the model uses about 1.5 GB of memory, so it runs on an 8 GB laptop.
-
-```bash
-brew install llama.cpp             # 0.8.0 or newer
-mkdir -p ~/models && curl -L -o ~/models/LFM3-1.7B-Q4_K_M.gguf \
-  https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF/resolve/main/LFM3-1.7B-Q4_K_M.gguf
-```
-
-In `.env`, set `LLM_BASE_URL=http://127.0.0.1:8080/v1` and `LLM_MODEL=LFM3-1.7B`. Then:
-
-```bash
-scripts/local_llm.sh start         # loads the model in the background
-python scripts/ask.py "What is Section 302 of IPC?"
-scripts/local_llm.sh stop          # frees the memory
-```
-
-`LOCAL_LLM_MODEL_PATH` and `LOCAL_LLM_PORT` override the model file and port. A 1.7B model follows the citation format less reliably than DeepSeek V3.2, so expect lower citation validity than the recorded evaluation runs.
 
 ### Nyaya-Gen: the answer writer trained for this project
 
@@ -101,14 +81,14 @@ Training and evaluation (sized for an 8 GB M2; close other apps first):
 
 | Script | What it does |
 |---|---|
-| `scripts/prepare_generator_data.py` | builds `data/generator/{train,dev,test}.jsonl` and `data_stats.json` from the statute and Constitution Q&A datasets (qa, IPC/BNS mapping and refusal examples, with test queries filtered out) |
-| `scripts/train_generator.py` | fine-tunes SmolLM2-135M-Instruct (fp32, gradient checkpointing, AdamW lr 1e-4, gradient accumulation 8), keeps the checkpoint with the lowest dev loss in `models/nyaya-gen/` and logs to `data/generator/training_log.json` |
-| `scripts/run_training.sh` | prepares the data if it is missing, then runs `train_generator.py` with the settings used for the report |
-| `scripts/run_evaluation.sh` | 1) Run D: Nyaya-Gen on the 50 test queries (`data/evaluation/eval_results_local.json`); 2) `scripts/retrieval_experiments.py` for the retrieval tables; 3) Run D0: the base SmolLM2-135M-Instruct, not fine-tuned (`eval_results_local_base.json`) |
+| `scripts/nyaya_gen/prepare_generator_data.py` | builds `data/generator/{train,dev,test}.jsonl` and `data_stats.json` from the statute and Constitution Q&A datasets (qa, IPC/BNS mapping and refusal examples, with test queries filtered out) |
+| `scripts/nyaya_gen/train_generator.py` | fine-tunes SmolLM2-135M-Instruct (fp32, gradient checkpointing, AdamW lr 1e-4, gradient accumulation 8), keeps the checkpoint with the lowest dev loss in `models/nyaya-gen/` and logs to `data/generator/training_log.json` |
+| `scripts/nyaya_gen/run_training.sh` | prepares the data if it is missing, then runs `train_generator.py` with the settings used for the report |
+| `scripts/evaluation/run_evaluation.sh` | 1) Run D: Nyaya-Gen on the 50 test queries (`data/evaluation/run_D_nyaya_gen.json`); 2) `scripts/evaluation/retrieval_experiments.py` for the retrieval tables; 3) Run D0: the base SmolLM2-135M-Instruct, not fine-tuned (`run_D0_base.json`) |
 
 ```bash
-nohup caffeinate -i scripts/run_training.sh > logs/training.log 2>&1 &
-nohup caffeinate -i scripts/run_evaluation.sh > logs/evaluation.log 2>&1 &
+nohup caffeinate -i scripts/nyaya_gen/run_training.sh > logs/training.log 2>&1 &
+nohup caffeinate -i scripts/evaluation/run_evaluation.sh > logs/evaluation.log 2>&1 &
 ```
 
 What the recorded training run did: 2,585 of the 4,000 built training examples fit in 1,024 tokens; one epoch would be 323 updates of 8 examples. At about 0.8 minutes per update the run completed about 80 updates in about 65 minutes before the 8 GB Mac ran out of memory, so the kept checkpoint is the one at update 50 (about 400 examples seen). The dev loss fell from 0.833 before training to 0.033 at that checkpoint.
@@ -118,10 +98,10 @@ What the recorded training run did: 2,585 of the 4,000 built training examples f
 The vector store is not committed because it is about 1.7 GB. Build it locally:
 
 ```bash
-python scripts/download_hf_datasets.py   # 5 public Indian-law datasets from Hugging Face
-python scripts/prepare_hf_data.py        # convert to the chunker's input format
-python scripts/chunk_documents.py        # legal-aware chunking
-python scripts/build_vectorstore.py      # embed and index into chroma_db/
+python scripts/data/download_hf_datasets.py   # 5 public Indian-law datasets from Hugging Face
+python scripts/data/prepare_hf_data.py        # convert to the chunker's input format
+python scripts/data/chunk_documents.py        # legal-aware chunking
+python scripts/data/build_vectorstore.py      # embed and index into chroma_db/
 ```
 
 This gives **112,555 chunks**: 101,983 from chunking about 31,000 documents, plus 12,041 chunks that come pre-split in two of the datasets. On an Apple M-series laptop the whole build takes about 15 minutes, 11 of them for embedding.
@@ -129,11 +109,11 @@ This gives **112,555 chunks**: 101,983 from chunking about 31,000 documents, plu
 Optional extra sources:
 
 ```bash
-python scripts/download_statutes.py      # IPC, BNS, CrPC, Constitution from India Code
-python scripts/download_indiankanoon.py  # landmark Supreme Court judgments
-python scripts/parse_pdfs.py             # parse those (and any PDFs you add to data/raw/)
-python scripts/chunk_documents.py
-python scripts/build_vectorstore.py
+python scripts/data/download_statutes.py      # IPC, BNS, CrPC, Constitution from India Code
+python scripts/data/download_indiankanoon.py  # landmark Supreme Court judgments
+python scripts/data/parse_pdfs.py             # parse those (and any PDFs you add to data/raw/)
+python scripts/data/chunk_documents.py
+python scripts/data/build_vectorstore.py
 ```
 
 Running `build_vectorstore.py` again is safe. Chunk ids are deterministic, so existing chunks are updated in place instead of being added twice. After changing the chunking, run it with `--reset` so chunks that no longer exist are removed. Scanned PDFs need the `tesseract` binary for OCR (`brew install tesseract` or `apt install tesseract-ocr`).
@@ -182,13 +162,13 @@ Example questions:
 pytest tests/
 ```
 
-There are 250 unit and integration tests. They cover chunking, PDF parsing, hybrid search scoring, re-ranking, the IPC/BNS lookup, prompt building, citation parsing, confidence scoring, the evaluation metrics and the full `LegalResearchPipeline` with the vector store and the LLM mocked. They need no API key or network access.
+There are 300 unit and integration tests. They cover chunking, PDF parsing, hybrid search scoring, re-ranking, the IPC/BNS lookup, prompt building, citation parsing, confidence scoring, the evaluation metrics and the full `LegalResearchPipeline` with the vector store and the LLM mocked. They need no API key or network access.
 
 ## Evaluation
 
 ```bash
-python scripts/evaluate.py            # all 50 queries in data/evaluation/test_queries.json
-python scripts/evaluate.py --limit 10
+python scripts/evaluation/evaluate.py            # all 50 queries in data/evaluation/test_queries.json
+python scripts/evaluation/evaluate.py --limit 10
 ```
 
 Results go to `data/evaluation/eval_results_latest.json` (choose another file with `--output`). The test set has 50 questions: section lookups, case lookups, conceptual questions and mixed ones. The script reports:
@@ -204,56 +184,16 @@ Results go to `data/evaluation/eval_results_latest.json` (choose another file wi
 
 ### Recorded results
 
-`data/evaluation/eval_results.json` contains the run reported in the project report (22 March 2026, 50 queries):
+These are the runs of Table IV and Table XI of the report (50 test queries each). Runs A–C use an API model; Run D uses Nyaya-Gen, fully local.
 
-| Metric | Value |
-|---|---|
-| Citation accuracy (validity) | 0.94 |
-| Hallucination rate | 0.02 |
-| Retrieval precision | 0.79 |
-| Average confidence | 0.69 |
-| Response rate | 0.30 |
+| File | Run | Citation validity | Cited claim coverage | Citation support | Hallucination rate | Response rate |
+|---|---|---|---|---|---|---|
+| `data/evaluation/run_A.json` | A: DeepSeek V3.2, earlier prompt, K = 6 | 0.94 | – | – | 0.02 | 0.30 |
+| `data/evaluation/run_B.json` | B: Nemotron | 0.66 | 0.42 | 0.50 | 0.02 | 0.66 |
+| `data/evaluation/run_C.json` | C: Nemotron, final | 0.70 | 0.42 | 0.50 | 0.04 | 0.68 |
+| `data/evaluation/run_D_nyaya_gen.json` | D: Nyaya-Gen (local) | **0.74** | **0.66** | **0.56** | **0.00** | **0.72** |
 
-Two caveats apply to these numbers:
-
-1. Citation validity only checks that a tag points to a real passage. It does not check that the passage supports the claim, which is why the evaluator now reports citation support separately.
-2. The response rate of 0.30 was the main weakness of that run. The earlier prompt asked the model to say "the provided sources do not contain sufficient information" whenever coverage was incomplete. Many partly answerable questions therefore came back as refusals, and any answer containing that phrase was scored as non-substantive. The prompt now asks the model to answer what the sources cover and to state separately what is missing, and the response-rate check now counts cited partial answers. Retrieval scoring was also corrected (see below). The recorded run predates these changes, and its numbers should not be read as results for the current code.
-
-`data/evaluation/eval_results_nemotron.json` is a later run with these changes (26 October 2026, 50 queries, `nvidia/nemotron-3-ultra-550b-a55b` on NVIDIA NIM):
-
-| Metric | Value |
-|---|---|
-| Citation validity | 0.66 |
-| Cited claim coverage | 0.42 |
-| Citation support | 0.50 |
-| Hallucination rate | 0.02 |
-| Retrieval precision | 0.91 |
-| Average confidence | 0.57 |
-| Response rate | 0.66 |
-
-Validity is averaged over all answers and an answer without any citation scores 0, so it moves with the response rate (17 of the 50 answers cited nothing). One of the test queries is deliberately empty and is rejected, which the run counts as its one error.
-
-`data/evaluation/eval_results_latest.json` repeats that run with the same model after exact-match search started using case names and nearest matches (28 October 2026): citation validity 0.70, response rate 0.68, average confidence 0.61, retrieval precision 0.92, hallucination rate 0.04 (2 answers). Five answers that were refusals before now cite their sources (Article 14, Section 498A and the Vishaka, Puttaswamy and MC Mehta cases). Four others went the other way. Rerunning them showed one was model variance, one answered without citation tags, one asks about the BNSS, which is not in the corpus, and one came back with the model's reasoning written out in plain text.
-
-## Changes since the report
-
-The project report (section 8.3) listed this as remaining work. All of it is now done:
-
-- **IPC to BNS mapping wired into the query pipeline** (`src/retrieval/ipc_bns.py`). Nine wrong rows in `config/ipc_bns_mapping.json` were also corrected, for example IPC 376 now maps to BNS 64 instead of 65, and IPC 364 to BNS 140(1) instead of 139.
-- **LLM naming cleaned up.** `GeminiClient` is now `LLMClient`, and the settings point at DeepSeek V3.2 on NVIDIA NIM, which is the model the report describes.
-- **Metadata flattened before prompt building**, so case names, courts, act names and section numbers now actually reach the model.
-- **`full_text` and `text` handled consistently** in the parse and chunk scripts, so files from `parse_pdfs.py` are chunked too.
-- **README and `requirements.txt` restored.**
-
-Fixes found along the way:
-
-- Semantic scores used `1 / (1 + d)` on a cosine distance. They now use `1 - d`.
-- The RRF score was about 60 times smaller than the other ranking signals, so it had almost no effect. It is now scaled to 0 to 1 before weighting.
-- Exact-match search was case-sensitive, so "section 302" missed "Section 302". Passages found only by exact match also had a semantic score of 0, which pushed them out of the top 4. They are now scored against the query embedding.
-- Exact-match search took the first matches in storage order, and "Section 302" appears in thousands of judgments, so the text of Article 14 itself was often not among them. It now asks ChromaDB for the passages nearest to the query among all exact matches. Matches must also be whole identifiers, so "Article 21" no longer matches "Article 210".
-- Case names were never used for exact matching, and "X v Y" without a dot was not even recognised as a case lookup. The distinctive party names are now searched ("Union of India" and "State of …" are skipped as too common), and initials are also tried in the dotted form used in judgments ("MC Mehta" → "M.C. Mehta"). Section numbers with a letter are normalised, so "section 304a" finds "Section 304A".
-- Some datasets contain the same record several times, and the copies used to fill the top-4 results. Duplicate passages are now removed before re-ranking.
-- Chunk ids were random UUIDs, so rebuilding the index duplicated every chunk. `chunk_documents.py` also wrote each chunk to two files, so each one was embedded twice.
+Standard metrics for Nyaya-Gen on its 200 held-out examples (Table XII, `data/evaluation/generator_metrics.json`): token F1 0.42 → 0.93, ROUGE-L 0.40 → 0.93, BERTScore 0.83 → 0.98 (before → after training).
 
 ## Project layout
 
@@ -262,23 +202,24 @@ config/
   settings.py              paths, model names, retrieval and scoring weights
   prompts.py               system prompt and source format
   ipc_bns_mapping.json     IPC → BNS correspondence table (63 sections)
-src/
-  ingestion/               PDF parsing with OCR fallback, text cleaning, metadata extraction
+src/                       the system, one folder per pipeline stage
+  ingestion/               PDF parsing, text cleaning, metadata extraction
   chunking/                section / article / paragraph chunkers
-  embeddings/              sentence-transformers wrapper, ChromaDB store
-  retrieval/               query classification, hybrid search, re-ranking, IPC/BNS lookup
-  generation/              LLM client, local Nyaya-Gen generator, prompt builder, citation parser
-  confidence/              four-signal confidence score
-  evaluation/              citation, hallucination and response metrics
+  embeddings/              MiniLM embeddings, ChromaDB store
+  retrieval/               IPC/BNS lookup, query classification, hybrid search, authority re-ranking
+  generation/              prompt builder, API client, Nyaya-Gen (local_generator.py), citation parser
+  confidence/              confidence score
+  evaluation/              citation, hallucination, response and retrieval metrics
   pipeline.py              LegalResearchPipeline: ties the stages together
 scripts/
-  ask.py                   command-line question answering
-  prepare_generator_data.py, train_generator.py   Nyaya-Gen data and training
-  run_training.sh, run_evaluation.sh             train Nyaya-Gen; run Runs D / D0 and the retrieval tables
-  …                        data download, parsing, chunking, indexing, evaluation
-tests/                     pytest suite
-data/evaluation/           test queries and recorded results
-data/generator/            Nyaya-Gen training data and training log
+  ask.py                   ask a question from the terminal
+  data/                    download datasets, parse, chunk, build the index
+  nyaya_gen/               Nyaya-Gen: build training data, train (run_training.sh)
+  evaluation/              end-to-end evaluation, retrieval tables, standard metrics (run_evaluation.sh)
+tests/                     pytest suite (300 tests)
+data/evaluation/           test queries and the results of Runs A–D
+data/generator/            Nyaya-Gen training data, training log and test predictions
+report/                    final report PDF
 models/                    trained Nyaya-Gen weights (not in git)
 ```
 

@@ -221,7 +221,7 @@ def test_summary_reads_run_a_format() -> None:
 
 
 def _load_evaluate_script():
-    path = Path(__file__).resolve().parent.parent / "scripts" / "evaluate.py"
+    path = Path(__file__).resolve().parent.parent / "scripts" / "evaluation" / "evaluate.py"
     spec = importlib.util.spec_from_file_location("evaluate_script", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

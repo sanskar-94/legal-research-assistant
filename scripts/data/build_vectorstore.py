@@ -7,8 +7,8 @@ deterministic, so running this again updates chunks in place. Use
 so chunks that no longer exist are dropped.
 
 Usage:
-    python scripts/build_vectorstore.py
-    python scripts/build_vectorstore.py --reset
+    python scripts/data/build_vectorstore.py
+    python scripts/data/build_vectorstore.py --reset
 """
 
 from __future__ import annotations
@@ -21,10 +21,10 @@ import time
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Path bootstrap - allow ``python scripts/build_vectorstore.py``
+# Path bootstrap - allow ``python scripts/data/build_vectorstore.py``
 # ---------------------------------------------------------------------------
 _SCRIPT_DIR = Path(__file__).resolve().parent
-_PROJECT_ROOT = _SCRIPT_DIR.parent
+_PROJECT_ROOT = _SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import CHUNKS_DIR, EMBEDDING_BATCH_SIZE  # noqa: E402

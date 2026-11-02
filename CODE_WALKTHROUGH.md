@@ -71,7 +71,7 @@ Then show the **model switch** in `from_settings()`: [src/pipeline.py:94](src/pi
   > "Judgments are split by paragraph, statutes by section, the Constitution by article — so one chunk is one legal unit."
 - Embeddings (MiniLM-L6-v2): [src/embeddings/embedding_service.py:13](src/embeddings/embedding_service.py:13)
 - ChromaDB store (112,555 chunks): [src/embeddings/vectorstore.py:55](src/embeddings/vectorstore.py:55)
-- Run by: `scripts/prepare_hf_data.py` → `scripts/chunk_documents.py` → `scripts/build_vectorstore.py`
+- Run by: `scripts/data/prepare_hf_data.py` → `scripts/data/chunk_documents.py` → `scripts/data/build_vectorstore.py`
 
 ### 3.3 IPC → BNS — [src/retrieval/ipc_bns.py](src/retrieval/ipc_bns.py)
 - Find sections in the question: `find()` [src/retrieval/ipc_bns.py:101](src/retrieval/ipc_bns.py:101)
@@ -105,29 +105,29 @@ Then show the **model switch** in `from_settings()`: [src/pipeline.py:94](src/pi
 
 > **Opening line:** "We replaced the 550B cloud model with SmolLM2-135M, a small pretrained model that we trained further on our own legal data, so the system runs offline. Three files: data, training, running."
 
-### Step 1 — Training data: [scripts/prepare_generator_data.py](scripts/prepare_generator_data.py)
+### Step 1 — Training data: [scripts/nyaya_gen/prepare_generator_data.py](scripts/nyaya_gen/prepare_generator_data.py)
 | Show | Say |
 |---|---|
 | Docstring, top of file | "Three kinds of examples: Q&A, IPC/BNS mapping, refusal." |
-| `build()` [:111](scripts/prepare_generator_data.py:111) | "Builds every example in the exact prompt format the pipeline uses." |
-| `make()` [:150](scripts/prepare_generator_data.py:150) | "The right passage is hidden at a random position k among 2–4 random distractors; the target cites [SOURCE_k]." |
-| Leakage filter [:165](scripts/prepare_generator_data.py:165) (`_is_leak` at [:98](scripts/prepare_generator_data.py:98)) | "Removes 572 questions similar to our 50 test questions — no cheating." |
-| Refusals [:175](scripts/prepare_generator_data.py:175) | "~7% have no right source → target is the refusal sentence, so it learns not to invent." |
-| Split by record [:203](scripts/prepare_generator_data.py:203) | "Train 94% / dev 3% / test 3%." |
+| `build()` [:111](scripts/nyaya_gen/prepare_generator_data.py:111) | "Builds every example in the exact prompt format the pipeline uses." |
+| `make()` [:150](scripts/nyaya_gen/prepare_generator_data.py:150) | "The right passage is hidden at a random position k among 2–4 random distractors; the target cites [SOURCE_k]." |
+| Leakage filter [:165](scripts/nyaya_gen/prepare_generator_data.py:165) (`_is_leak` at [:98](scripts/nyaya_gen/prepare_generator_data.py:98)) | "Removes 572 questions similar to our 50 test questions — no cheating." |
+| Refusals [:175](scripts/nyaya_gen/prepare_generator_data.py:175) | "~7% have no right source → target is the refusal sentence, so it learns not to invent." |
+| Split by record [:203](scripts/nyaya_gen/prepare_generator_data.py:203) | "Train 94% / dev 3% / test 3%." |
 
 Output: `data/generator/train.jsonl` (open one line to show a real example).
 
-### Step 2 — Training: [scripts/train_generator.py](scripts/train_generator.py)
+### Step 2 — Training: [scripts/nyaya_gen/train_generator.py](scripts/nyaya_gen/train_generator.py)
 | Show | Say |
 |---|---|
-| Base model [:36](scripts/train_generator.py:36) | "We start from SmolLM2-135M-Instruct, 134.5M parameters." |
-| `encode()` [:45](scripts/train_generator.py:45), mask at [:55](scripts/train_generator.py:55) | "Prompt tokens get label −100, so the loss is only on the answer — Equation 9 in the report." |
-| Gradient checkpointing [:112](scripts/train_generator.py:112) | "Saves memory so it fits in 8 GB." |
-| AdamW [:129](scripts/train_generator.py:129), `lr_at()` [:59](scripts/train_generator.py:59) | "lr 1e-4, warm-up then cosine decay." |
-| Accumulation [:145](scripts/train_generator.py:145)–[:158](scripts/train_generator.py:158) | "Gradients from 8 examples are added before each update." |
-| Save best [:175](scripts/train_generator.py:175) | "Keep the checkpoint with the lowest dev loss — update 50, dev loss 0.833 → 0.033." |
+| Base model [:36](scripts/nyaya_gen/train_generator.py:36) | "We start from SmolLM2-135M-Instruct, 134.5M parameters." |
+| `encode()` [:45](scripts/nyaya_gen/train_generator.py:45), mask at [:55](scripts/nyaya_gen/train_generator.py:55) | "Prompt tokens get label −100, so the loss is only on the answer — Equation 9 in the report." |
+| Gradient checkpointing [:112](scripts/nyaya_gen/train_generator.py:112) | "Saves memory so it fits in 8 GB." |
+| AdamW [:129](scripts/nyaya_gen/train_generator.py:129), `lr_at()` [:59](scripts/nyaya_gen/train_generator.py:59) | "lr 1e-4, warm-up then cosine decay." |
+| Accumulation [:145](scripts/nyaya_gen/train_generator.py:145)–[:158](scripts/nyaya_gen/train_generator.py:158) | "Gradients from 8 examples are added before each update." |
+| Save best [:175](scripts/nyaya_gen/train_generator.py:175) | "Keep the checkpoint with the lowest dev loss — update 50, dev loss 0.833 → 0.033." |
 
-Run with `scripts/run_training.sh`; result log: `data/generator/training_log.json`; model: `models/nyaya-gen/`.
+Run with `scripts/nyaya_gen/run_training.sh`; result log: `data/generator/training_log.json`; model: `models/nyaya-gen/`.
 
 ### Step 3 — Using it: [src/generation/local_generator.py](src/generation/local_generator.py)
 - `LocalGenerator` loads the model on the M2 GPU: [src/generation/local_generator.py:42](src/generation/local_generator.py:42)
@@ -141,11 +141,11 @@ Run with `scripts/run_training.sh`; result log: `data/generator/training_log.jso
 
 ## Part 5 — Evaluation (3 min)
 
-### 5.1 End-to-end (Table XI) — [scripts/evaluate.py](scripts/evaluate.py)
-- `evaluate()` runs the 50 test questions through the full pipeline: [scripts/evaluate.py:121](scripts/evaluate.py:121)
+### 5.1 End-to-end (Table XI) — [scripts/evaluation/evaluate.py](scripts/evaluation/evaluate.py)
+- `evaluate()` runs the 50 test questions through the full pipeline: [scripts/evaluation/evaluate.py:121](scripts/evaluation/evaluate.py:121)
 - Metrics: [src/evaluation/citation_metrics.py](src/evaluation/citation_metrics.py) — validity [:39](src/evaluation/citation_metrics.py:39), coverage [:79](src/evaluation/citation_metrics.py:79), support [:142](src/evaluation/citation_metrics.py:142), hallucination [:225](src/evaluation/citation_metrics.py:225)
-- Command: `LLM_BACKEND=local python scripts/evaluate.py --output data/evaluation/eval_results_local.json`
-- Result file: `data/evaluation/eval_results_local.json`
+- Command: `LLM_BACKEND=local python scripts/evaluation/evaluate.py --output data/evaluation/run_D_nyaya_gen.json`
+- Result file: `data/evaluation/run_D_nyaya_gen.json`
 
 | Metric | API 550B | **Nyaya-Gen** |
 |---|---|---|
@@ -155,9 +155,9 @@ Run with `scripts/run_training.sh`; result log: `data/generator/training_log.jso
 | Hallucination rate | 0.04 | **0.00** |
 | Response rate | 0.68 | **0.72** |
 
-### 5.2 Standard LLM metrics (Table XII) — [scripts/evaluate_generator_metrics.py](scripts/evaluate_generator_metrics.py)
-- Token F1 (SQuAD style): [:70](scripts/evaluate_generator_metrics.py:70)
-- ROUGE-L, BLEU, BERTScore: `score()` [:142](scripts/evaluate_generator_metrics.py:142)
+### 5.2 Standard LLM metrics (Table XII) — [scripts/evaluation/evaluate_generator_metrics.py](scripts/evaluation/evaluate_generator_metrics.py)
+- Token F1 (SQuAD style): [:70](scripts/evaluation/evaluate_generator_metrics.py:70)
+- ROUGE-L, BLEU, BERTScore: `score()` [:142](scripts/evaluation/evaluate_generator_metrics.py:142)
 - Runs both our model and the untrained base model on 200 held-out examples
 - Result file: `data/evaluation/generator_metrics.json`
 

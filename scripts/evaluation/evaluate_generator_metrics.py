@@ -19,8 +19,8 @@ so the effect of fine-tuning is visible. Predictions are cached in
 ``data/generator/predictions_<name>.jsonl`` so a stopped run resumes.
 
 Usage:
-    python scripts/evaluate_generator_metrics.py            # both models, 200 examples
-    python scripts/evaluate_generator_metrics.py --limit 50
+    python scripts/evaluation/evaluate_generator_metrics.py            # both models, 200 examples
+    python scripts/evaluation/evaluate_generator_metrics.py --limit 50
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import DATA_DIR, LOCAL_GENERATOR_BASE_MODEL, LOCAL_GENERATOR_PATH  # noqa: E402
@@ -49,7 +49,7 @@ REFUSAL_HINTS = ("do not address", "does not address", "not covered by the retri
 
 
 def _load_train_module():
-    spec = importlib.util.spec_from_file_location("train_generator", _PROJECT_ROOT / "scripts" / "train_generator.py")
+    spec = importlib.util.spec_from_file_location("train_generator", _PROJECT_ROOT / "scripts" / "nyaya_gen" / "train_generator.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

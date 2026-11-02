@@ -56,10 +56,10 @@ RECENCY_BRACKETS = [
 RECENCY_DEFAULT = 0.2  # >20 years
 
 # LLM provider
-# Any OpenAI-compatible endpoint works. The default is DeepSeek V3.2 served
-# through NVIDIA NIM. Override with LLM_BASE_URL / LLM_MODEL in .env.
+# Any OpenAI-compatible endpoint works. The default is Nemotron 3 Ultra
+# (the API model of Run C in the report), served through NVIDIA NIM. Override with LLM_BASE_URL / LLM_MODEL in .env.
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-ai/deepseek-v3.2")
+LLM_MODEL = os.getenv("LLM_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")
 LLM_TEMPERATURE = 0.1
 LLM_MAX_TOKENS = 1024
 LLM_RPM_LIMIT = 40  # NVIDIA NIM free tier allows 40 requests per minute
@@ -81,7 +81,7 @@ MAX_JUDGEMENTS = 200
 
 # Answer writer. "api" = OpenAI-compatible endpoint above (LLMClient);
 # "local" = Nyaya-Gen, the fine-tuned SmolLM2-135M in models/nyaya-gen
-# (scripts/train_generator.py). Sources are cut to the length used in training.
+# (scripts/nyaya_gen/train_generator.py). Sources are cut to the length used in training.
 LLM_BACKEND = os.getenv("LLM_BACKEND", "api").strip().lower()
 LOCAL_GENERATOR_BASE_MODEL = "HuggingFaceTB/SmolLM2-135M-Instruct"
 LOCAL_GENERATOR_PATH = Path(os.getenv("NYAYA_GEN_PATH", PROJECT_ROOT / "models" / "nyaya-gen"))

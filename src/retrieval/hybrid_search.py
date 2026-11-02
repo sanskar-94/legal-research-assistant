@@ -332,7 +332,7 @@ class HybridSearch:
         Returns ``{"classification", "semantic_hits", "keyword_hits"}``:
         the query type, the ``top_k`` nearest chunks, and the ``top_k``
         nearest chunks that contain one of the query's legal identifiers.
-        ``search`` fuses these; ``scripts/retrieval_experiments.py`` caches
+        ``search`` fuses these; ``scripts/evaluation/retrieval_experiments.py`` caches
         them so every fusion and re-ranking setting sees the same candidates.
         """
         classification = self.classify_query(query)

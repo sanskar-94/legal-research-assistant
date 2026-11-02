@@ -10,7 +10,7 @@ This script reads the downloaded HF datasets from data/raw/ and
 converts them into that format.
 
 Usage:
-    python scripts/prepare_hf_data.py
+    python scripts/data/prepare_hf_data.py
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import logging
 import sys
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import PROCESSED_DIR, RAW_DIR, CHUNKS_DIR  # noqa: E402
@@ -237,8 +237,8 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("")
     logger.info("Next steps:")
-    logger.info("  1. python scripts/chunk_documents.py   (chunk the documents)")
-    logger.info("  2. python scripts/build_vectorstore.py (embed + index)")
+    logger.info("  1. python scripts/data/chunk_documents.py   (chunk the documents)")
+    logger.info("  2. python scripts/data/build_vectorstore.py (embed + index)")
 
 
 if __name__ == "__main__":

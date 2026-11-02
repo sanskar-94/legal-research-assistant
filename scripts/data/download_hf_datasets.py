@@ -4,7 +4,7 @@ Each split of each dataset in ``DATASETS`` is saved as
 ``data/raw/<slug>_<split>.json``.
 
 Usage:
-    python scripts/download_hf_datasets.py
+    python scripts/data/download_hf_datasets.py
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any
 
 # ---------------------------------------------------------------------------
-# Path bootstrap – allow ``python scripts/download_hf_datasets.py``
+# Path bootstrap – allow ``python scripts/data/download_hf_datasets.py``
 # ---------------------------------------------------------------------------
 _SCRIPT_DIR = Path(__file__).resolve().parent
-_PROJECT_ROOT = _SCRIPT_DIR.parent
+_PROJECT_ROOT = _SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import RAW_DIR  # noqa: E402

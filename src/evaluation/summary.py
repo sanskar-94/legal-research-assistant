@@ -1,6 +1,6 @@
 """Aggregate per-query evaluation records into Table IV and Table V of the report.
 
-``scripts/evaluate.py`` writes one record per test query. This module turns
+``scripts/evaluation/evaluate.py`` writes one record per test query. This module turns
 those records into the summary (Table IV: one column per run) and the
 per-category breakdown (Table V). It accepts both the current record format
 and the older one of Run A (``citation_accuracy`` instead of

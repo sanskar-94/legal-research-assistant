@@ -10,7 +10,7 @@ keywords ``W`` and expected document types ``T``:
                       (``0`` if none); its mean over queries is the MRR
 
 Keyword matching is a case-insensitive substring test, as in
-``scripts/evaluate.py``. When fewer than ``K`` chunks are retrieved the
+``scripts/evaluation/evaluate.py``. When fewer than ``K`` chunks are retrieved the
 missing slots count as irrelevant (the denominator stays ``K``).
 """
 

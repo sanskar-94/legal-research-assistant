@@ -12,8 +12,6 @@ then evaluated from that cache, so all of them see the same candidates:
 * Table VI    K in {2, 4, 6, 8, 10}
 * Table VII   RRF k in {1, 10, 30, 60, 100}; pool per path in {5, 10, 20, 30, 40}
 * Table VIII  final-score weights (w_s, w_r, w_a) and fixed vs adaptive fusion
-* optional    (g) (f) + Nyaya-Rerank and (h) Nyaya-Rerank alone, with the
-              added latency per query (``--reranker PATH``)
 
 The ranking code is the deployed code: ``HybridSearch.classify_query`` and
 ``search_paths``, ``fuse_hits`` (weighted RRF), ``_drop_duplicate_texts``
@@ -23,10 +21,8 @@ settings are the deployed ones: pool 20 per path, K = 4, k = 60, adaptive
 fusion weights and (w_s, w_r, w_a) = (0.50, 0.25, 0.25).
 
 Usage:
-    python scripts/retrieval_experiments.py                # build cache if needed, print tables
-    python scripts/retrieval_experiments.py --refresh      # re-run both search paths
-    python scripts/retrieval_experiments.py --reranker models/nyaya-reranker \\
-        --reranker-weight 0.5 --reranker-candidates 20
+    python scripts/evaluation/retrieval_experiments.py                # build cache if needed, print tables
+    python scripts/evaluation/retrieval_experiments.py --refresh      # re-run both search paths
 
 Building the cache needs the ChromaDB index and the embedding model; once it
 exists, the tables are computed from it alone.
@@ -43,9 +39,9 @@ import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Optional, Sequence
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -429,101 +425,6 @@ def table_viii(cache: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# Nyaya-Rerank rows (optional)
-
-
-def reranker_rows(
-    cache: dict[str, Any],
-    score_fn: Callable[[str, list[str]], list[float]],
-    weight: float,
-    candidates: int = 20,
-    query_field: str = "retrieval_query",
-    base: Config = PROPOSED,
-) -> dict[str, Any]:
-    """Rows (g) "(f) + Nyaya-Rerank" and (h) "Nyaya-Rerank alone".
-
-    (g): the top *candidates* chunks by S get ``S* = (1 - lambda) S + lambda r``
-    and the top K by S* are kept. (h): every chunk of the fused,
-    de-duplicated pool is ranked by ``r`` alone (lambda = 1). *score_fn*
-    returns the re-ranker's scores ``r`` in [0, 1] for one query and its
-    passages. Timing covers only the calls to *score_fn*. As in
-    ``CrossEncoderReranker.rerank``, ``r`` and ``S*`` are rounded to 6
-    decimals, a non-finite ``r`` counts as 0 and ties keep the S order.
-    """
-    combine = _combine_scores()
-    g_rankings, h_rankings = [], []
-    g_seconds, h_seconds = [], []
-    for entry in cache["queries"]:
-        query = entry[query_field]
-        pool = candidate_pool(entry, cache["chunks"], base)
-        by_s = score_candidates(pool, base)
-        head, tail = by_s[:candidates], by_s[candidates:]
-
-        start = time.perf_counter()
-        head_r = list(score_fn(query, [c["text"] for c in head])) if head else []
-        head_time = time.perf_counter() - start
-        start = time.perf_counter()
-        tail_r = list(score_fn(query, [c["text"] for c in tail])) if tail else []
-        tail_time = time.perf_counter() - start
-        g_seconds.append(head_time)
-        h_seconds.append(head_time + tail_time)
-
-        r_by_id = {
-            c["chunk_id"]: round(float(r), 6) if math.isfinite(float(r)) else 0.0
-            for c, r in zip(head + tail, head_r + tail_r)
-        }
-
-        combined = [
-            {**c, "rerank_score": r_by_id[c["chunk_id"]],
-             "combined_score": round(combine(float(c["final_score"]), r_by_id[c["chunk_id"]], weight), 6)}
-            for c in head
-        ]
-        combined.sort(key=lambda c: c["combined_score"], reverse=True)
-        g_rankings.append(combined[:base.top_k])
-
-        # (h) ranks the fused, de-duplicated pool in its fused (R) order by r alone
-        alone = sorted(pool, key=lambda c: r_by_id[c["chunk_id"]], reverse=True)
-        h_rankings.append(alone[:base.top_k])
-
-    n = len(cache["queries"]) or 1
-    g = summarise_rankings(cache, g_rankings, base.top_k)
-    h = summarise_rankings(cache, h_rankings, base.top_k)
-    return {
-        "lambda": weight,
-        "candidates": candidates,
-        "query_field": query_field,
-        "rows": [
-            _row("(g) (f) + Nyaya-Rerank", g, id="g",
-                 mean_added_latency_seconds=round(sum(g_seconds) / n, 4)),
-            _row("(h) Nyaya-Rerank alone", h, id="h",
-                 mean_added_latency_seconds=round(sum(h_seconds) / n, 4)),
-        ],
-        "per_category_P_kw": {
-            "g": {c: round(m["P_kw"], 4) for c, m in g["per_category"].items()},
-            "h": {c: round(m["P_kw"], 4) for c, m in h["per_category"].items()},
-        },
-    }
-
-
-def _combine_scores() -> Callable[[float, float, float], float]:
-    """``S* = (1 - lambda) S + lambda r``, from the deployed module when it exists."""
-    try:
-        from src.retrieval.cross_encoder import combine_scores
-    except ImportError:
-        def combine_scores(pipeline_score: float, cross_encoder_score: float, weight: float) -> float:
-            return (1.0 - weight) * pipeline_score + weight * cross_encoder_score
-    return combine_scores
-
-
-def load_cross_encoder(model_path: str) -> Callable[[str, list[str]], list[float]]:
-    """Return ``score(query, texts)`` of the trained Nyaya-Rerank model."""
-    # Imported here: the module is optional and its model needs torch.
-    from src.retrieval.cross_encoder import CrossEncoderReranker
-
-    model = CrossEncoderReranker(model_path)
-    return model.score
-
-
 # Printing
 
 
@@ -549,7 +450,7 @@ def _print_table(
 def print_report(results: dict[str, Any]) -> None:
     n = results["meta"]["queries"]
     t3 = results["table_III"]
-    rows = t3["rows"] + t3["extra_rows"] + results.get("reranker", {}).get("rows", [])
+    rows = t3["rows"] + t3["extra_rows"]
     _print_table(
         f"TABLE III. Retrieval comparison with the baseline methods ({n} queries).",
         ["Method", "P@4", "P_kw@4", "Hit@4", "MRR"],
@@ -558,11 +459,8 @@ def print_report(results: dict[str, Any]) -> None:
     )
     print(f"Dense top-4 slots repeating an earlier passage (no de-duplication): "
           f"{t3['dense_duplicate_slot_share']:.1%}")
-    for r in results.get("reranker", {}).get("rows", []):
-        print(f"{r['label']}: mean added latency {r['mean_added_latency_seconds'] * 1000:.1f} ms/query")
 
     per_cat = dict(t3["per_category_P_kw"])
-    per_cat.update(results.get("reranker", {}).get("per_category_P_kw", {}))
     categories = list(next(iter(per_cat.values())).keys()) if per_cat else []
     _print_table(
         "Keyword precision P_kw@4 per category (rows of Table III).",
@@ -616,14 +514,8 @@ def print_report(results: dict[str, Any]) -> None:
 # Main
 
 
-def run_experiments(
-    cache: dict[str, Any],
-    score_fn: Optional[Callable[[str, list[str]], list[float]]] = None,
-    reranker_weight: float = 0.5,
-    reranker_candidates: int = 20,
-    reranker_query_field: str = "retrieval_query",
-) -> dict[str, Any]:
-    """Compute every table from *cache*; add rows (g)/(h) when *score_fn* is given."""
+def run_experiments(cache: dict[str, Any]) -> dict[str, Any]:
+    """Compute every table from *cache*."""
     entries = cache["queries"]
     searched = [e["search_seconds"] for e in entries if e.get("search_seconds") is not None]
     results: dict[str, Any] = {
@@ -645,10 +537,6 @@ def run_experiments(
         "table_VIII": table_viii(cache),
         "search_latency_seconds": round(sum(searched) / len(searched), 3) if searched else None,
     }
-    if score_fn is not None:
-        results["reranker"] = reranker_rows(
-            cache, score_fn, reranker_weight, reranker_candidates, reranker_query_field,
-        )
     return results
 
 
@@ -687,14 +575,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--pool", type=int, default=DEFAULT_CACHE_POOL,
                         help="candidates cached per search path (default 40)")
     parser.add_argument("--refresh", action="store_true", help="re-run the search paths")
-    parser.add_argument("--reranker", default=None, metavar="PATH",
-                        help="trained Nyaya-Rerank model; adds rows (g) and (h)")
-    parser.add_argument("--reranker-weight", type=float, default=0.5, metavar="LAMBDA",
-                        help="lambda in S* = (1 - lambda) S + lambda r (default 0.5)")
-    parser.add_argument("--reranker-candidates", type=int, default=20,
-                        help="top chunks by S re-scored in row (g) (default 20)")
-    parser.add_argument("--reranker-query", choices=("retrieval", "original"), default="retrieval",
-                        help="score the IPC/BNS-expanded query (as retrieval does) or the original")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
@@ -705,17 +585,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     cache = _load_or_build_cache(args, test_queries)
 
-    score_fn = None
-    if args.reranker:
-        score_fn = load_cross_encoder(args.reranker)
-
-    results = run_experiments(
-        cache,
-        score_fn=score_fn,
-        reranker_weight=args.reranker_weight,
-        reranker_candidates=args.reranker_candidates,
-        reranker_query_field="retrieval_query" if args.reranker_query == "retrieval" else "query",
-    )
+    results = run_experiments(cache)
     print_report(results)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

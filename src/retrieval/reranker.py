@@ -174,7 +174,7 @@ class AuthorityReranker:
         divided by the rank-1 score of a single list, so a top keyword or
         semantic hit scores 1.0; *rrf_k* is the ``k`` used in the fusion
         (default ``RRF_K``). The two keyword arguments exist for the
-        parameter sweeps in ``scripts/retrieval_experiments.py``.
+        parameter sweeps in ``scripts/evaluation/retrieval_experiments.py``.
         """
         if not results:
             logger.warning("Reranker received empty results list")

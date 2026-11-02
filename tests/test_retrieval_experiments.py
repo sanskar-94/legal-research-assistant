@@ -1,4 +1,4 @@
-"""Tests for scripts/retrieval_experiments.py on a small hand-made cache.
+"""Tests for scripts/evaluation/retrieval_experiments.py on a small hand-made cache.
 
 No index or embedding model is needed: the cache below stands in for the
 cached dense and exact-match results, and the expected values are worked
@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "retrieval_experiments.py"
+_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "evaluation" / "retrieval_experiments.py"
 _spec = importlib.util.spec_from_file_location("retrieval_experiments", _SCRIPT)
 assert _spec is not None and _spec.loader is not None
 rx = importlib.util.module_from_spec(_spec)
@@ -272,51 +272,6 @@ class TestTables:
         assert [r["pool"] for r in rx.table_vii(cache)["pool"]] == [5, 10, 20]
 
 
-# Nyaya-Rerank rows
-
-
-def _fake_scores(query: str, texts: list[str]) -> list[float]:
-    return [1.0 if ("natural justice" in t.lower() or "section 302" in t.lower()) else 0.0 for t in texts]
-
-
-class TestRerankerRows:
-
-    def test_lambda_zero_equals_proposed(self, cache: dict[str, Any]) -> None:
-        out = rx.reranker_rows(cache, _fake_scores, weight=0.0)
-        g = out["rows"][0]
-        f = next(r for r in rx.table_iii(cache)["rows"] if r["id"] == "f")
-        assert (g["P_kw"], g["MRR"]) == (f["P_kw"], f["MRR"])
-
-    def test_reranker_alone(self, cache: dict[str, Any]) -> None:
-        out = rx.reranker_rows(cache, _fake_scores, weight=1.0)
-        g, h = out["rows"]
-        assert h["id"] == "h" and g["id"] == "g"
-        # Q1: [d3, e1, e2, d1] -> 3/4; Q2: [n1, n3, n2] -> 2/4, RR 1
-        assert h["P_kw"] == pytest.approx(0.625)
-        assert h["MRR"] == pytest.approx(1.0)
-        assert g["MRR"] == pytest.approx(1.0)
-        assert g["mean_added_latency_seconds"] >= 0.0
-        assert h["mean_added_latency_seconds"] >= g["mean_added_latency_seconds"]
-
-    def test_candidates_limit(self, cache: dict[str, Any]) -> None:
-        out = rx.reranker_rows(cache, _fake_scores, weight=1.0, candidates=2)
-        per_query = out["per_category_P_kw"]["g"]
-        # Q1 keeps only [d3, e1] (2 of 4 slots); Q2 keeps [n2, n1] -> n1 first
-        assert per_query["section_lookup"] == pytest.approx(0.5)
-        assert per_query["conceptual"] == pytest.approx(0.25)
-
-    def test_query_field(self, cache: dict[str, Any]) -> None:
-        seen: list[str] = []
-
-        def score(query: str, texts: list[str]) -> list[float]:
-            seen.append(query)
-            return [0.5] * len(texts)
-
-        rx.reranker_rows(cache, score, weight=0.5, query_field="query")
-        assert QUERIES[0]["query"] in seen
-        assert all("Section 103 BNS" not in q for q in seen)
-
-
 # End to end through main()
 
 
@@ -335,4 +290,3 @@ def test_main_writes_all_tables(tmp_path: Path, cache: dict[str, Any], capsys: p
     results = json.loads(output_path.read_text())
     assert results["meta"]["queries"] == 2
     assert {"table_III", "table_VI", "table_VII", "table_VIII"} <= set(results)
-    assert "reranker" not in results

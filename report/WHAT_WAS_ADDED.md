@@ -42,6 +42,6 @@ New numbering used: Equation (9); Tables IX, X, XI, XII; Fig. 2; References [15]
 
 ## Where every number comes from
 - Training: `data/generator/training_log.json`, `data/generator/data_stats.json`
-- Run D results: `data/evaluation/eval_results_local.json` (2 Nov 2026)
+- Run D results: `data/evaluation/run_D_nyaya_gen.json` (2 Nov 2026)
 - Run C numbers: the original Table IV of the report
-- Table XII (F1, ROUGE-L, BERTScore): `data/evaluation/generator_metrics.json`, made by `scripts/evaluate_generator_metrics.py`
+- Table XII (F1, ROUGE-L, BERTScore): `data/evaluation/generator_metrics.json`, made by `scripts/evaluation/evaluate_generator_metrics.py`

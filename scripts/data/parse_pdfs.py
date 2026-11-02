@@ -5,7 +5,7 @@ appropriate parser, and writes structured JSON output. Statutes crawled
 section by section by ``download_statutes.py`` are converted as well.
 
 Usage:
-    python scripts/parse_pdfs.py
+    python scripts/data/parse_pdfs.py
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 # Ensure project root is on sys.path so imports work when running as a script
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 

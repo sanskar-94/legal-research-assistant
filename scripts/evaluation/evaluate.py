@@ -7,9 +7,9 @@ per-category breakdown (Table V) and writes per-query results to
 ``data/evaluation/eval_results_latest.json``.
 
 Usage:
-    python scripts/evaluate.py
-    python scripts/evaluate.py --limit 10
-    python scripts/evaluate.py --summarise data/evaluation/eval_results_deepseek.json
+    python scripts/evaluation/evaluate.py
+    python scripts/evaluation/evaluate.py --limit 10
+    python scripts/evaluation/evaluate.py --summarise data/evaluation/run_C.json
 
 Requires NVIDIA_API_KEY (or LLM_API_KEY) in .env and a populated vector store.
 ``--summarise`` needs neither: it re-prints the tables of a saved run.
@@ -49,7 +49,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import EVAL_DIR, LLM_BACKEND, LLM_MODEL, RERANKED_TOP_K  # noqa: E402
@@ -268,7 +268,7 @@ def main() -> None:
         "--output",
         type=Path,
         default=EVAL_DIR / "eval_results_latest.json",
-        help="where to write the JSON results (eval_results.json holds the "
+        help="where to write the JSON results (run_A.json holds the "
         "run recorded in the project report, so it is not the default)",
     )
     parser.add_argument(

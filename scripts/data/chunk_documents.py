@@ -12,7 +12,7 @@ Reads the JSON files under ``data/processed/`` (recursively, skipping the
 All chunks go to ``data/processed/chunks/all_chunks.json``.
 
 Usage:
-    python scripts/chunk_documents.py
+    python scripts/data/chunk_documents.py
 """
 
 from __future__ import annotations
@@ -23,10 +23,10 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Path bootstrap - allow ``python scripts/chunk_documents.py``
+# Path bootstrap - allow ``python scripts/data/chunk_documents.py``
 # ---------------------------------------------------------------------------
 _SCRIPT_DIR = Path(__file__).resolve().parent
-_PROJECT_ROOT = _SCRIPT_DIR.parent
+_PROJECT_ROOT = _SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import CHUNKS_DIR, PROCESSED_DIR  # noqa: E402

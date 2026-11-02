@@ -1,8 +1,8 @@
 """Client for the answer-generation LLM.
 
 Talks to any OpenAI-compatible chat endpoint. The project default is
-DeepSeek V3.2 on NVIDIA NIM (see ``config.settings``); a local llama.cpp
-server (``scripts/local_llm.sh``) works too and needs no API key. Requests
+Nemotron on NVIDIA NIM (see ``config.settings``). The fully local answer
+writer, Nyaya-Gen, is ``src/generation/local_generator.py``. Requests
 are rate limited with a sliding window and retried with exponential backoff.
 """
 
@@ -202,7 +202,7 @@ class LLMClient:
             if isinstance(exc, APIConnectionError) and _LOCAL_HOST_PATTERN.match(LLM_BASE_URL):
                 raise LLMClientError(
                     f"Cannot reach the local model at {LLM_BASE_URL}. "
-                    "Start it with: scripts/local_llm.sh start"
+                    "Check that the server is running."
                 ) from exc
             raise
 

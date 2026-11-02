@@ -12,7 +12,7 @@ Fallback sources: legislative.gov.in, other public mirrors.
 Rate-limited to 1 request per second.
 
 Usage:
-    python scripts/download_statutes.py
+    python scripts/data/download_statutes.py
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from pathlib import Path
 # Path bootstrap
 # ---------------------------------------------------------------------------
 _SCRIPT_DIR = Path(__file__).resolve().parent
-_PROJECT_ROOT = _SCRIPT_DIR.parent
+_PROJECT_ROOT = _SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.settings import RAW_DIR  # noqa: E402
